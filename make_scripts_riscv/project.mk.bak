@@ -220,7 +220,7 @@ ifeq ($(CONFIG_ZIGBEE), 1)
 EXTRA_LDFLAGS += --specs=nosys.specs
 endif
 
-E21_CPU_LDFLAGS := -march=rv32imafc \
+E21_CPU_LDFLAGS := -march=rv32imfc \
                    -mabi=ilp32f
 
 LDFLAGS ?=  $(E21_CPU_LDFLAGS) \
@@ -331,7 +331,7 @@ DEBUG_FLAGS ?= -gdwarf
 # If any flags are defined in application Makefile, add them at the end.
 EXTRA_CFLAGS ?=
 
-E21_CPU_CFLAGS := -march=rv32imafc \
+E21_CPU_CFLAGS := -march=rv32imfc \
                   -mabi=ilp32f
 
 ASMFLAGS := $(E21_CPU_CFLAGS)

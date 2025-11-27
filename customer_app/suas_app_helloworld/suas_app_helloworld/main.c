@@ -15,6 +15,7 @@ void bfl_main(void) {
       /* Receive pin */ 7,
       /* Unused */ 255,
       /* Unused */ 255,
-      /* Baud rate */ 2 * 1000 * 1000);
+      // /* Baud rate */ 2 * 1000 * 1000);
+      /* Baud rate */ 115200);
   printf("Hello world!\r\n");
 }
