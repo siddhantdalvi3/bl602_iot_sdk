@@ -33,6 +33,42 @@ materials.
 
 Quick Start
 -----------
+
+Cloning the Repository
+======================
+
+Clone this repository with all submodules::
+
+    git clone --recursive https://github.com/siddhantdalvi3/bl602_iot_sdk.git
+
+If you encounter SSH authentication issues with submodules, configure Git to use HTTPS instead::
+
+    git config --global url."https://github.com/".insteadOf git@github.com:
+    git config --global url."https://github.com/".insteadOf git://github.com/
+
+Then clone or update submodules::
+
+    git submodule update --init --recursive
+
+macOS
+=====
+
+For macOS users, we provide an automated setup script. See `MACOS_SETUP.md <MACOS_SETUP.md>`_ for detailed instructions.
+
+Quick steps::
+
+    chmod +x macos_setup.sh
+    ./macos_setup.sh
+
+Then follow the instructions printed at the end of the script to set environment variables.
+
+**Important:** Before running ``make``, always activate the Python virtual environment::
+
+    source /path/to/bl602_iot_sdk/venv/bin/activate
+
+Linux
+=====
+
 In order to build sample apps, you need to set a few environment variables::
 
     export BL60X_SDK_PATH=/path/to/this/repo

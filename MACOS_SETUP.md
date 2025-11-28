@@ -6,7 +6,7 @@ This guide describes how to set up the development environment for the BL602 IoT
 
 - **macOS**: Tested on macOS Sequoia (should work on recent versions).
 - **Homebrew**: Required for installing packages. [Install Homebrew](https://brew.sh/).
-- **Rust/Cargo**: Required for the flashing tool. [Install Rust](https://rustup.rs/).
+- **Rust/Cargo**: Required for the flashing tool (will be installed automatically by the setup script if missing).
 
 ## 2. Automated Setup
 
@@ -19,6 +19,14 @@ We have provided a script to automate the installation of dependencies and confi
     chmod +x macos_setup.sh
     ./macos_setup.sh
     ```
+
+    This script will:
+
+    - Install the RISC-V toolchain, CMake, Ninja, Python3, and DTC via Homebrew.
+    - Create a Python virtual environment (`venv`) to avoid "externally-managed-environment" errors.
+    - Install Python dependencies inside the virtual environment.
+    - Patch `project.mk` for macOS toolchain compatibility.
+    - Install Rust (if missing) and the `blflash` flashing tool.
 
 3.  Follow the instructions at the end of the script to export the necessary environment variables. Add them to your `~/.zshrc`:
 
@@ -35,21 +43,31 @@ We have provided a script to automate the installation of dependencies and confi
 
 ## 3. Building a Project
 
-To build an example project (e.g., `suas_app_helloworld`):
+**Important:** Before building, you must activate the Python virtual environment.
 
-1.  Navigate to the project directory:
+1.  Activate the virtual environment:
+
+    ```bash
+    source /path/to/bl602_iot_sdk/venv/bin/activate
+    ```
+
+    _(You will see `(venv)` at the start of your terminal prompt)_
+
+2.  Navigate to the project directory:
 
     ```bash
     cd customer_app/suas_app_helloworld
     ```
 
-2.  Run `make`:
+3.  Run `make`:
 
     ```bash
     make
     ```
 
 The output binary will be located at `build_out/suas_app_helloworld.bin`.
+
+> **Note:** You must activate the virtual environment every time you open a new terminal window before running `make`.
 
 ## 4. Flashing the Firmware
 
@@ -89,6 +107,12 @@ To view the serial output (printf debugging):
 
 ## Troubleshooting
 
+- **"externally-managed-environment" error during `make`**:
+
+  - You forgot to activate the Python virtual environment.
+  - Run: `source /path/to/bl602_iot_sdk/venv/bin/activate`
+  - Then retry `make`.
+
 - **"Operation timed out" during flashing**:
 
   - Unplug and replug the device.
@@ -99,6 +123,11 @@ To view the serial output (printf debugging):
 
   - Another program (like `screen`) might be using the serial port. Close it or run `killall screen`.
 
-- **Compiler errors**:
-  - Ensure `CONFIG_TOOLPREFIX` is set correctly.
-  - Ensure `project.mk` is patched to use `-march=rv32imafc` (the setup script does this).
+- **Compiler errors (ABI incompatible / elf64 vs elf32)**:
+
+  - Ensure `CONFIG_TOOLPREFIX` is set correctly to `riscv64-unknown-elf-`.
+  - Ensure `project.mk` is patched to use `-march=rv32imafc` (the setup script does this automatically).
+
+- **`blflash` build fails with `console::Term` error**:
+  - The setup script installs `blflash` from the local patched version in `tools/blflash`.
+  - If you need to reinstall manually, run: `cargo install --path tools/blflash/blflash`

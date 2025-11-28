@@ -22,16 +22,26 @@ brew tap riscv-software-src/riscv
 echo "Installing riscv-tools, cmake, ninja, python3, dtc..."
 brew install riscv-tools cmake ninja python3 dtc
 
-# 3. Install Python Requirements
-echo -e "${GREEN}Installing Python requirements...${NC}"
-# Ensure pip3 is available
-if ! command -v pip3 &> /dev/null; then
-    echo "pip3 not found, trying to bootstrap..."
-    python3 -m ensurepip --upgrade
+# 3. Create and activate Python virtual environment
+echo -e "${GREEN}Setting up Python virtual environment...${NC}"
+VENV_DIR="venv"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "Creating virtual environment in $VENV_DIR..."
+    python3 -m venv "$VENV_DIR"
+else
+    echo "Virtual environment already exists."
 fi
-pip3 install -r image_conf/requirements.txt
 
-# 4. Patch project.mk for macOS RISC-V toolchain compatibility
+# Activate the virtual environment
+source "$VENV_DIR/bin/activate"
+echo "Virtual environment activated."
+
+# 4. Install Python Requirements
+echo -e "${GREEN}Installing Python requirements...${NC}"
+pip install --upgrade pip
+pip install -r image_conf/requirements.txt
+
+# 5. Patch project.mk for macOS RISC-V toolchain compatibility
 # The standard RISC-V toolchain on macOS often requires rv32imafc instead of rv32imfc
 echo -e "${GREEN}Patching make_scripts_riscv/project.mk for toolchain compatibility...${NC}"
 PROJECT_MK="make_scripts_riscv/project.mk"
@@ -49,7 +59,7 @@ else
     echo -e "${RED}Warning: $PROJECT_MK not found, skipping patch.${NC}"
 fi
 
-# 5. Install blflash
+# 6. Install blflash
 echo -e "${GREEN}Checking for blflash...${NC}"
 if command -v blflash &> /dev/null; then
     echo "blflash is already installed."
@@ -86,6 +96,10 @@ echo "export CONFIG_CHIP_NAME=BL602"
 echo "export CONFIG_TOOLPREFIX=riscv64-unknown-elf-"
 echo ""
 echo "After saving, run: source ~/.zshrc"
+echo ""
+echo -e "${GREEN}IMPORTANT:${NC} Before running 'make', always activate the virtual environment:"
+echo ""
+echo "  source $(pwd)/venv/bin/activate"
 echo ""
 echo "Have fun developing with the BL602 SDK!"
 echo "----------------------------------------------------------------"
