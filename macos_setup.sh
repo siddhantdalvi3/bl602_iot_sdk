@@ -55,6 +55,13 @@ if command -v blflash &> /dev/null; then
     echo "blflash is already installed."
 else
     echo "Installing blflash via cargo..."
+
+    # Check for cargo and install if missing
+    if ! command -v cargo &> /dev/null; then
+        echo "Cargo not found. Installing Rust via Homebrew..."
+        brew install rust
+    fi
+
     if ! command -v cargo &> /dev/null; then
         echo -e "${RED}Cargo (Rust) not found. Please install Rust: https://rustup.rs/${NC}"
     else
@@ -74,7 +81,7 @@ echo -e "${GREEN}Setup complete!${NC}"
 echo "----------------------------------------------------------------"
 echo "Please add the following lines to your ~/.zshrc or ~/.bash_profile:"
 echo ""
-echo "export BL60X_SDK_PATH=$(pwd)"
+echo "export BL60X_SDK_PATH=\"$(pwd)\""
 echo "export CONFIG_CHIP_NAME=BL602"
 echo "export CONFIG_TOOLPREFIX=riscv64-unknown-elf-"
 echo ""
