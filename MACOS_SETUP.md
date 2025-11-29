@@ -45,6 +45,34 @@ We have provided a script to automate the installation of dependencies and confi
 
 **Important:** Before building, you must activate the Python virtual environment.
 
+### Setting Up the Python Virtual Environment (Manual Method)
+
+If you didn't run the setup script, or need to recreate the virtual environment manually:
+
+1.  Create the virtual environment (only needed once):
+
+    ```bash
+    cd /path/to/bl602_iot_sdk
+    python3 -m venv venv
+    ```
+
+2.  Activate the virtual environment:
+
+    ```bash
+    source venv/bin/activate
+    ```
+
+    _(You will see `(venv)` at the start of your terminal prompt)_
+
+3.  Install the required Python packages:
+
+    ```bash
+    pip install --upgrade pip
+    pip install -r image_conf/requirements.txt
+    ```
+
+### Building
+
 1.  Activate the virtual environment:
 
     ```bash
