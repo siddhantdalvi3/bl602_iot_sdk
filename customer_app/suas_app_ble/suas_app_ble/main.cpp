@@ -230,7 +230,7 @@ void aos_loop_proc([[gnu::unused]] void *pvParameters) {
   aos_loop_init();
 
   /* Store app role enumeration */
-  enum app_ble_role app_role = UNINITIALIZED;
+  enum app_ble_role app_role = PERIPHERAL;
   vTaskSetThreadLocalStoragePointer(
       /* Task */ nullptr,
       /* Index */ 0,
@@ -239,6 +239,9 @@ void aos_loop_proc([[gnu::unused]] void *pvParameters) {
   /* Register event filters */
   aos_register_event_filter(EV_KEY, event_cb_key_event, nullptr);
   aos_register_event_filter(EV_BLE_TEST, event_cb_ble_event, nullptr);
+
+  /* Auto-start as peripheral */
+  start_peripheral_application();
 
   aos_loop_run();
 

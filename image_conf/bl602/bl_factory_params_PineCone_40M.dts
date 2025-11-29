@@ -29,7 +29,7 @@
             time = <100>; //duration for this mode
         };
         gpio2 {
-            status = "okay";
+            status = "disable";
             pin = <2>;
             feature = "button";
             active = "Hi";
@@ -196,7 +196,7 @@
             id = <0>;
             compatible = "bl602_uart";
             path = "/dev/ttyS0";
-            baudrate = <2000000>;
+            baudrate = <115200>;
             pin {
                 rx = <7>;
                 tx = <16>;

@@ -500,6 +500,10 @@ void fdt_button_module_init(const void *fdt, int button_offset)
     }
 
     log_buf(pinbuf, pinbuf_size);
-    hal_hbn_init(pinbuf, pinbuf_size);
+    /* Only call hal_hbn_init if there are HBN pins configured (pinbuf_size > 0).
+       If no HBN pins are found, skip to avoid spurious "arg error" messages. */
+    if (pinbuf_size > 0) {
+        hal_hbn_init(pinbuf, pinbuf_size);
+    }
     vPortFree(pinbuf);
 }
