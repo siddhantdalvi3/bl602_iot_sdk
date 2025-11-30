@@ -87,21 +87,19 @@ void event_cb_ble_event(input_event_t *event,
       printf("[BLE] Device disconnected\r\n");
       bl_gpio_output_set(LED_RED, 0);
 
-      // Wait 5s and retry to connect
-      vTaskDelay(pdMS_TO_TICKS(5000));
-
       // Get app role from Thread Local Storage
       auto app_role = static_cast<enum app_ble_role>(
           reinterpret_cast<uintptr_t>(pvTaskGetThreadLocalStoragePointer(
               /* Task */ nullptr,
               /* Index */ 0)));
 
-      // Central: start scanning
+      // Central: restart scanning after delay
       if (app_role == CENTRAL) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
         ble_central_start_scanning();
-      } else {  // Peripheral: start advertising -> defined in gatt_server.c
-        ble_peripheral_start_advertising();
       }
+      // Peripheral: do NOT restart advertising (BLE stack handles re-advertising automatically)
+      // Just wait for next connection attempt
     } break;
     /* Only called by central: exchange MTU size*/
     case BLE_DEV_SUBSCRIBED:
@@ -177,6 +175,22 @@ void event_cb_key_event(input_event_t *event,
   }
 }
 
+/* CLI command to send BLE notification */
+static void cmd_send_notif(char *buf, int len, int argc, char **argv) {
+  (void)buf;
+  (void)len;
+  (void)argc;
+  (void)argv;
+  
+  printf("[CLI] Sending BLE notification...\r\n");
+  ble_peripheral_send_notification();
+  printf("[CLI] Notification sent\r\n");
+}
+
+static const struct cli_command cmd_table[] = {
+    { "send", "Send BLE notification to connected device", cmd_send_notif },
+};
+
 /* Helper function to read device tree */
 static int get_dts_addr(etl::string_view name, uint32_t &start, uint32_t &off) {
   /* Check we get valid data*/
@@ -239,6 +253,9 @@ void aos_loop_proc([[gnu::unused]] void *pvParameters) {
   /* Register event filters */
   aos_register_event_filter(EV_KEY, event_cb_key_event, nullptr);
   aos_register_event_filter(EV_BLE_TEST, event_cb_ble_event, nullptr);
+
+  /* Register CLI commands */
+  aos_cli_register_commands(cmd_table, sizeof(cmd_table) / sizeof(cmd_table[0]));
 
   /* Auto-start as peripheral */
   start_peripheral_application();
