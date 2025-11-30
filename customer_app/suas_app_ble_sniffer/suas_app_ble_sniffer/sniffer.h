@@ -14,6 +14,7 @@ typedef struct {
     uint32_t timestamp;          /* Packet timestamp */
     uint8_t payload_len;         /* Payload length */
     uint8_t payload[255];        /* Raw payload data */
+    char device_name[32];        /* Device name from advertisement (if available) */
 } ble_packet_t;
 
 /**
@@ -57,5 +58,7 @@ void sniffer_on_packet_received(const uint8_t *mac, int8_t rssi,
  * @brief Create and start packet processing task
  */
 void sniffer_create_task(void);
+
+
 
 #endif /* __SNIFFER_H__ */
