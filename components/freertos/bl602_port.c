@@ -45,9 +45,9 @@ static HeapRegion_t xHeapRegions[] =
 
   /* Initialize UART
    * Ports: 16+7 (TX+RX)
-   * Baudrate: 2 million
+   * Baudrate: 115200
    */
-  bl_uart_init(0, 16, 7, 255, 255, 2 * 1000 * 1000);
+  bl_uart_init(0, 16, 7, 255, 255, 115200);
   printf("[BL602] Starting up!\r\n");
 
   // System init
