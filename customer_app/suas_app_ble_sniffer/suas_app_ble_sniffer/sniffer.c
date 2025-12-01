@@ -1,26 +1,14 @@
-/**
- * @file sniffer.c
- * @brief Enhanced BLE Promiscuous Sniffer Implementation
- * 
- * Features:
- * - Full advertisement data parsing (name, services, manufacturer data, TX power)
- * - Extended packet structure with all BLE advertisement fields
- * - Larger buffer for high-traffic environments
- * - Statistics tracking
- */
-
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 #include <FreeRTOS.h>
 #include <task.h>
 
-#include "sniffer.h"
+#include "include/sniffer.h"
 
-/* Increased buffer for better capture in high-traffic environments */
 #define SNIFFER_BUFFER_SIZE 200
 
-/* BLE AD Types (Assigned Numbers) */
+// AD types
 #define AD_TYPE_FLAGS              0x01
 #define AD_TYPE_UUID16_INCOMPLETE  0x02
 #define AD_TYPE_UUID16_COMPLETE    0x03
@@ -47,9 +35,6 @@ typedef struct {
 
 static packet_buffer_t g_packet_buffer = {0};
 
-/**
- * @brief Parse all AD structures from BLE advertisement payload
- */
 static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len,
                                      ble_packet_t *packet)
 {
@@ -59,16 +44,15 @@ static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len
         return;
     }
     
-    /* Initialize optional fields */
     packet->device_name[0] = '\0';
-    packet->tx_power = -128;  /* Invalid/not present */
+    packet->tx_power = -128;
     packet->appearance = 0;
     packet->flags = 0;
     packet->company_id = 0;
     packet->mfg_data_len = 0;
     packet->num_services = 0;
     
-    /* Parse AD structures */
+    // Parse AD structures
     while (i < payload_len - 1) {
         uint8_t ad_len = payload[i];
         
@@ -89,10 +73,10 @@ static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len
                 
             case AD_TYPE_SHORT_NAME:
             case AD_TYPE_COMPLETE_NAME: {
-                int copy_len = (ad_data_len < sizeof(packet->device_name) - 1) 
-                               ? ad_data_len : sizeof(packet->device_name) - 1;
-                memcpy(packet->device_name, ad_data, copy_len);
-                packet->device_name[copy_len] = '\0';
+                // Copy name (truncate if too long)
+                int len = ad_data_len < 31 ? ad_data_len : 31;
+                memcpy(packet->device_name, ad_data, len);
+                packet->device_name[len] = '\0';
                 break;
             }
             
@@ -110,9 +94,9 @@ static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len
                 
             case AD_TYPE_UUID16_INCOMPLETE:
             case AD_TYPE_UUID16_COMPLETE: {
-                /* Parse 16-bit UUIDs */
-                int num_uuids = ad_data_len / 2;
-                for (int j = 0; j < num_uuids && packet->num_services < 8; j++) {
+                // Parse UUIDs
+                int n = ad_data_len / 2;
+                for (int j = 0; j < n && packet->num_services < 8; j++) {
                     packet->service_uuids[packet->num_services++] = 
                         ad_data[j*2] | (ad_data[j*2+1] << 8);
                 }
@@ -132,7 +116,6 @@ static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len
                 break;
                 
             default:
-                /* Unknown AD type - skip */
                 break;
         }
         
@@ -181,10 +164,9 @@ void sniffer_send_packet_serial(const ble_packet_t *packet)
     if (!packet) {
         return;
     }
-    /* Packets are captured via btsnoop hooks, no serial output needed here */
 }
 
-/* Legacy callback - redirects to extended version */
+// Legacy wrapper
 void sniffer_on_packet_received(const uint8_t *mac, int8_t rssi, 
                                 uint8_t channel, uint32_t timestamp,
                                 const uint8_t *payload, uint8_t payload_len)
@@ -205,7 +187,7 @@ void sniffer_on_packet_received_ex(const uint8_t *mac, int8_t rssi,
         return;
     }
     
-    /* Copy basic fields */
+    // Fill packet struct
     memcpy(packet.mac, mac, 6);
     packet.rssi = rssi;
     packet.channel = channel;
@@ -217,7 +199,7 @@ void sniffer_on_packet_received_ex(const uint8_t *mac, int8_t rssi,
     /* payload_len is uint8_t (max 255), packet.payload is 255 bytes, so always fits */
     memcpy(packet.payload, payload, payload_len);
     
-    /* Parse all advertisement data fields */
+    // Parse advertisement data
     parse_advertisement_data(payload, payload_len, &packet);
     
     sniffer_enqueue_packet(&packet);
@@ -225,15 +207,13 @@ void sniffer_on_packet_received_ex(const uint8_t *mac, int8_t rssi,
 
 void sniffer_init(void)
 {
-    printf("[SNIFFER] Initializing Enhanced BLE Sniffer\r\n");
+    printf("[SNIFFER] Init (buffer: %d)\r\n", SNIFFER_BUFFER_SIZE);
     memset(&g_packet_buffer, 0, sizeof(packet_buffer_t));
-    printf("[SNIFFER] Buffer size: %d packets\r\n", SNIFFER_BUFFER_SIZE);
-    printf("[SNIFFER] Features: Name, Services, Manufacturer Data, TX Power\r\n");
 }
 
 void sniffer_start(void)
 {
-    printf("[SNIFFER] Starting enhanced packet capture...\r\n");
+    printf("[SNIFFER] Capture started\r\n");
 }
 
 int sniffer_get_packet(ble_packet_t *packet)
@@ -254,50 +234,41 @@ void sniffer_get_stats(uint32_t *total_packets, uint32_t *overflow_count,
     taskEXIT_CRITICAL();
 }
 
-static void sniffer_task(void *pvParameters)
+static void sniffer_task(void *arg)
 {
-    (void)pvParameters;
-    ble_packet_t packet = {0};
+    (void)arg;
+    ble_packet_t pkt = {0};
     uint32_t last_status = 0;
-    uint32_t packet_count_last = 0;
+    uint32_t last_cnt = 0;
     
-    printf("[SNIFFER] Packet processing task started\r\n");
+    printf("[SNIFFER] Task running\r\n");
     
     while (1) {
-        if (sniffer_get_packet(&packet)) {
-            sniffer_send_packet_serial(&packet);
-            /* Minimal delay for high throughput */
+        if (sniffer_get_packet(&pkt)) {
+            sniffer_send_packet_serial(&pkt);
             vTaskDelay(pdMS_TO_TICKS(2));
         } else {
-            /* No packets - short delay */
             vTaskDelay(pdMS_TO_TICKS(20));
         }
         
-        /* Print status every 10 seconds */
+        // Status every 10s
         uint32_t now = xTaskGetTickCount();
         if ((now - last_status) > pdMS_TO_TICKS(10000)) {
             last_status = now;
-            uint32_t rate = (g_packet_buffer.packet_count - packet_count_last) / 10;
-            printf("[SNIFFER] Total=%lu, Rate=%lu/sec, Overflow=%lu, Buffer=%u/%u\r\n",
+            uint32_t rate = (g_packet_buffer.packet_count - last_cnt) / 10;
+            printf("[SNIFFER] Total=%lu Rate=%lu/s Overflow=%lu Buffer=%u/%u\r\n",
                    g_packet_buffer.packet_count, rate, 
                    g_packet_buffer.overflow_count, g_packet_buffer.count, SNIFFER_BUFFER_SIZE);
-            packet_count_last = g_packet_buffer.packet_count;
+            last_cnt = g_packet_buffer.packet_count;
         }
     }
 }
 
 void sniffer_create_task(void)
 {
-    static StaticTask_t task_buffer;
-    static StackType_t task_stack[1536];  /* Increased stack for parsing */
+    static StaticTask_t task_buf;
+    static StackType_t stack[1536];
     
-    xTaskCreateStatic(sniffer_task, 
-                      "sniffer_task",
-                      1536,
-                      NULL,
-                      12,  /* Higher priority for capture */
-                      task_stack,
-                      &task_buffer);
+    xTaskCreateStatic(sniffer_task, "sniffer", 1536, NULL, 12, stack, &task_buf);
 }
-
 

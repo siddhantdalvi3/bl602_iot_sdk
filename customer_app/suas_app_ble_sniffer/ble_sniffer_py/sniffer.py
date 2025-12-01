@@ -695,7 +695,7 @@ class SnifferStats:
         if self.devices:
             # Show top 5 devices by packet count
             sorted_devices = sorted(self.devices.values(),
-                                    key=lambda d: -d.packet_count)[:5]
+                                    key=lambda d: -d.packet_count)[:10]
             print(f"\n  {Colors.BOLD}Top Devices:{Colors.RESET}")
             for dev in sorted_devices:
                 name_str = f" \"{dev.name}\"" if dev.name else ""

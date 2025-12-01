@@ -1,0 +1,2 @@
+MAC Address,Name,Manufacturer,Address Type,RSSI (Avg),RSSI (Min),RSSI (Max),TX Power,Appearance,Services,Company ID,Company Name,First Seen,Last Seen,Packet Count,ADV Types
+B0:BE:83:62:06:95,,Unknown,public,-36.7,-41,-33,5,,,,,2025-12-01 03:01:05,2025-12-01 03:01:13,16,SCAN_RSP; ADV_IND
