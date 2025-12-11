@@ -203,11 +203,16 @@ BL_SDK_RF_VER := $(shell cd ${BL60X_SDK_PATH}/components/bl602/bl602_wifi/plf/re
 endif
 $(info use git describe to generate version.txt)
 else
-BL_SDK_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n1`
+BL_SDK_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n1)
 ifeq ("$(CONFIG_CHIP_NAME)", "BL602")
-BL_SDK_PHY_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n2|tail -n1`
-BL_SDK_RF_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n3|tail -n1`
+BL_SDK_PHY_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n2 | tail -n1)
+BL_SDK_RF_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n3 | tail -n1)
 endif
+# BL_SDK_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n1`
+# ifeq ("$(CONFIG_CHIP_NAME)", "BL602")
+# BL_SDK_PHY_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n2|tail -n1`
+# BL_SDK_RF_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n3|tail -n1`
+# endif
 $(info use existing version.txt file)
 endif
 BL_CHIP_NAME := ${CONFIG_CHIP_NAME}

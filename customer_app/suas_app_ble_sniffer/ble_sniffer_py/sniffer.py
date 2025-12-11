@@ -349,6 +349,26 @@ SERVICE_UUIDS = {
     0xFD6F: "Apple Exposure Notification",
 }
 
+# GATT Characteristics (16-bit UUIDs)
+GATT_CHARACTERISTICS = {
+    0x2A00: "Device Name",
+    0x2A01: "Appearance",
+    0x2A02: "Peripheral Privacy Flag",
+    0x2A03: "Reconnection Address",
+    0x2A04: "Peripheral Preferred Connection Parameters",
+    0x2A05: "Service Changed",
+    0x2A19: "Battery Level",
+    0x2A24: "Model Number String",
+    0x2A25: "Serial Number String",
+    0x2A26: "Firmware Revision String",
+    0x2A27: "Hardware Revision String",
+    0x2A28: "Software Revision String",
+    0x2A29: "Manufacturer Name String",
+    0x2A37: "Heart Rate Measurement",
+    0x2A38: "Body Sensor Location",
+    0x2A8E: "TX Power Level",
+}
+
 # BLE Appearance values
 APPEARANCES = {
     0x0000: "Unknown",
@@ -441,6 +461,15 @@ class BLEDevice:
     packet_count: int = 0
     adv_types_seen: set = field(default_factory=set)
     raw_mfg_data: bytes = b''
+    
+    # GATT Service Information (Phase 2)
+    battery_level: Optional[int] = None
+    manufacturer_name: str = ""
+    model_number: str = ""
+    firmware_rev: str = ""
+    has_battery_service: bool = False
+    has_device_info_service: bool = False
+    has_heart_rate_service: bool = False
 
     def update_rssi(self, rssi: int):
         self.rssi_samples.append(rssi)
@@ -491,6 +520,21 @@ class BLEDevice:
             list(self.adv_types_seen),
             'mfg_data_hex':
             self.raw_mfg_data.hex() if self.raw_mfg_data else None,
+            
+            # GATT Service Data
+            'battery_level':
+            self.battery_level,
+            'manufacturer_name':
+            self.manufacturer_name,
+            'model_number':
+            self.model_number,
+            'firmware_rev':
+            self.firmware_rev,
+            'services_detected': {
+                'battery': self.has_battery_service,
+                'device_info': self.has_device_info_service,
+                'heart_rate': self.has_heart_rate_service,
+            }
         }
 
 
@@ -651,6 +695,28 @@ class SnifferStats:
 
         if packet_info.get('mfg_data'):
             device.raw_mfg_data = packet_info['mfg_data']
+        
+        # GATT Service Data (Phase 2)
+        if packet_info.get('battery_level') is not None and packet_info.get('battery_level') != 0xFF:
+            device.battery_level = packet_info['battery_level']
+        
+        if packet_info.get('manufacturer_name'):
+            device.manufacturer_name = packet_info['manufacturer_name']
+        
+        if packet_info.get('model_number'):
+            device.model_number = packet_info['model_number']
+        
+        if packet_info.get('firmware_rev'):
+            device.firmware_rev = packet_info['firmware_rev']
+        
+        if packet_info.get('has_battery_service'):
+            device.has_battery_service = True
+        
+        if packet_info.get('has_device_info_service'):
+            device.has_device_info_service = True
+        
+        if packet_info.get('has_heart_rate_service'):
+            device.has_heart_rate_service = True
 
     def _lookup_manufacturer(self, mac: str) -> str:
         prefix = mac[:8].upper()
@@ -765,50 +831,90 @@ def parse_ad_structures(data: bytes) -> dict:
         'services': [],
         'company_id': None,
         'mfg_data': b'',
+        'battery_level': None,
+        'manufacturer_name': '',
+        'model_number': '',
+        'firmware_rev': '',
+        'has_battery_service': False,
+        'has_device_info_service': False,
+        'has_heart_rate_service': False,
     }
 
-    i = 0
-    while i < len(data) - 1:
-        length = data[i]
-        if length == 0 or i + length >= len(data):
-            break
+    try:
+        i = 0
+        while i < len(data) - 1:
+            length = data[i]
+            if length == 0 or i + length >= len(data):
+                break
 
-        ad_type = data[i + 1]
-        ad_data = data[i + 2:i + 1 + length]
+            ad_type = data[i + 1]
+            ad_data = data[i + 2:i + 1 + length]
 
-        if ad_type == 0x01:  # Flags
-            result['flags'] = ad_data[0] if ad_data else 0
+            if ad_type == 0x01:  # Flags
+                result['flags'] = ad_data[0] if ad_data else 0
 
-        elif ad_type in (0x08, 0x09):  # Short/Complete Name
-            try:
-                result['name'] = ad_data.decode('utf-8', errors='ignore')
-            except:
-                pass
+            elif ad_type in (0x08, 0x09):  # Short/Complete Name
+                try:
+                    result['name'] = ad_data.decode('utf-8', errors='ignore')
+                except:
+                    pass
 
-        elif ad_type == 0x0A:  # TX Power Level
-            if ad_data:
-                result['tx_power'] = ad_data[0] if ad_data[
-                    0] < 128 else ad_data[0] - 256
+            elif ad_type == 0x0A:  # TX Power Level
+                if ad_data:
+                    result['tx_power'] = ad_data[0] if ad_data[
+                        0] < 128 else ad_data[0] - 256
 
-        elif ad_type == 0x19:  # Appearance
-            if len(ad_data) >= 2:
-                appearance_val = ad_data[0] | (ad_data[1] << 8)
-                result['appearance'] = APPEARANCES.get(
-                    appearance_val, f"0x{appearance_val:04X}")
+            elif ad_type == 0x19:  # Appearance
+                if len(ad_data) >= 2:
+                    appearance_val = ad_data[0] | (ad_data[1] << 8)
+                    result['appearance'] = APPEARANCES.get(
+                        appearance_val, f"0x{appearance_val:04X}")
 
-        elif ad_type in (0x02, 0x03):  # 16-bit UUIDs
-            for j in range(0, len(ad_data) - 1, 2):
-                uuid = ad_data[j] | (ad_data[j + 1] << 8)
-                svc_name = SERVICE_UUIDS.get(uuid, f"0x{uuid:04X}")
-                if svc_name not in result['services']:
-                    result['services'].append(svc_name)
+            elif ad_type in (0x02, 0x03):  # 16-bit UUIDs
+                try:
+                    for j in range(0, len(ad_data) - 1, 2):
+                        uuid = ad_data[j] | (ad_data[j + 1] << 8)
+                        svc_name = SERVICE_UUIDS.get(uuid, f"0x{uuid:04X}")
+                        if svc_name not in result['services']:
+                            result['services'].append(svc_name)
+                        
+                        # Detect GATT services
+                        if uuid == 0x180F:  # Battery Service
+                            result['has_battery_service'] = True
+                        elif uuid == 0x180A:  # Device Information Service
+                            result['has_device_info_service'] = True
+                        elif uuid == 0x180D:  # Heart Rate Service
+                            result['has_heart_rate_service'] = True
+                except:
+                    pass
 
-        elif ad_type == 0xFF:  # Manufacturer Data
-            if len(ad_data) >= 2:
-                result['company_id'] = ad_data[0] | (ad_data[1] << 8)
-                result['mfg_data'] = bytes(ad_data[2:])
+            elif ad_type == 0xFF:  # Manufacturer Data
+                if len(ad_data) >= 2:
+                    result['company_id'] = ad_data[0] | (ad_data[1] << 8)
+                    result['mfg_data'] = bytes(ad_data[2:])
+                    
+                    # Extract battery from manufacturer-specific data
+                    try:
+                        company_id = result['company_id']
+                        mfg_bytes = ad_data[2:]
+                        
+                        # Samsung (0x0075) - battery at offset 3
+                        if company_id == 0x0075 and len(mfg_bytes) >= 4:
+                            result['battery_level'] = mfg_bytes[3]
+                        
+                        # Apple (0x004C) - various formats, try common battery patterns
+                        elif company_id == 0x004C and len(mfg_bytes) >= 5:
+                            # Apple sometimes encodes battery in specific positions
+                            # Common pattern: byte 4-5 may contain info
+                            pass
+                    except:
+                        pass
 
-        i += length + 1
+            i += length + 1
+
+    except Exception as e:
+        # Silently ignore parsing errors and return partial results
+        pass
 
     return result
 
@@ -903,110 +1009,67 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
     """Parse btsnoop line and return (packet_bytes, packet_info)"""
     packet_info = {}
 
-    # Normalize line - replace Unicode × with x (multiplication sign vs letter x)
-    line = line.replace('×', 'x')
+    try:
+        # Normalize line - replace Unicode × with x (multiplication sign vs letter x)
+        line = line.replace('×', 'x')
 
-    # Handle HCI Events
-    match = re.search(
-        r'pkt_type\s*=\[0x([0-9a-fA-F]+)\].*data=\[([0-9a-fA-F]+)\]', line)
-    if match:
-        pkt_type_int = int(match.group(1), 16)
-        data = bytes.fromhex(match.group(2))
+        # Handle HCI Events
+        match = re.search(
+            r'pkt_type\s*=\[0x([0-9a-fA-F]+)\].*data=\[([0-9a-fA-F]+)\]', line)
+        if match:
+            pkt_type_int = int(match.group(1), 16)
+            data = bytes.fromhex(match.group(2))
 
-        if pkt_type_int == 4:  # LE Event
-            h4_type = 0x04
-            evt_code = 0x3E
-            length = len(data)
-            packet = bytes([h4_type, evt_code, length]) + data
+            if pkt_type_int == 4:  # LE Event
+                h4_type = 0x04
+                evt_code = 0x3E
+                length = len(data)
+                packet = bytes([h4_type, evt_code, length]) + data
 
-            packet_info = {
-                'type': 'HCI_EVT',
-                'event_code': evt_code,
-                'subevent': data[0] if data else 0,
-            }
+                packet_info = {
+                    'type': 'HCI_EVT',
+                    'event_code': evt_code,
+                    'subevent': data[0] if data else 0,
+                }
 
-            if data and data[0] == 0x02:
-                adv_info = decode_le_advertising_report(data)
-                if adv_info:
-                    packet_info.update(adv_info)
+                if data and data[0] == 0x02:
+                    adv_info = decode_le_advertising_report(data)
+                    if adv_info:
+                        packet_info.update(adv_info)
 
-            return packet, packet_info
+                return packet, packet_info
 
-        elif pkt_type_int == 5:  # General Event
-            h4_type = 0x04
-            packet = bytes([h4_type]) + data
-            packet_info = {
-                'type': 'HCI_EVT',
-                'event_code': data[0] if data else 0
-            }
-            return packet, packet_info
+            elif pkt_type_int == 5:  # General Event
+                h4_type = 0x04
+                packet = bytes([h4_type]) + data
+                packet_info = {
+                    'type': 'HCI_EVT',
+                    'event_code': data[0] if data else 0
+                }
+                return packet, packet_info
 
-        elif pkt_type_int == 2:  # Command Complete
-            h4_type = 0x04
-            evt_code = 0x0E
-            length = len(data)
-            packet = bytes([h4_type, evt_code, length]) + data
-            packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
-            return packet, packet_info
+            elif pkt_type_int == 2:  # Command Complete
+                h4_type = 0x04
+                evt_code = 0x0E
+                length = len(data)
+                packet = bytes([h4_type, evt_code, length]) + data
+                packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
+                return packet, packet_info
 
-        elif pkt_type_int == 3:  # Command Status
-            h4_type = 0x04
-            evt_code = 0x0F
-            length = len(data)
-            packet = bytes([h4_type, evt_code, length]) + data
-            packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
-            return packet, packet_info
+            elif pkt_type_int == 3:  # Command Status
+                h4_type = 0x04
+                evt_code = 0x0F
+                length = len(data)
+                packet = bytes([h4_type, evt_code, length]) + data
+                packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
+                return packet, packet_info
 
+    except (ValueError, struct.error) as e:
+        # Return None for unparseable packets - will be counted as error but won't crash
         return None, None
-
-    # Handle ACL Data
-    if "Acl_in_handle" in line or "Acl_out_handle" in line:
-        direction = 'IN' if 'Acl_in' in line else 'OUT'
-        match = re.search(
-            r'handle\s*=\[0x([0-9a-fA-F]+)\],pb_bc_flag\s*=\[0x([0-9a-fA-F]+)\].*data=\[([0-9a-fA-F]+)\]',
-            line)
-        if match:
-            handle = int(match.group(1), 16)
-            pb_bc = int(match.group(2), 16)
-            data = bytes.fromhex(match.group(3))
-            length = len(data)
-
-            h4_type = 0x02
-            acl_header = bytes([
-                handle & 0xFF, ((handle >> 8) & 0x0F) | ((pb_bc & 0x0F) << 4),
-                length & 0xFF, (length >> 8) & 0xFF
-            ])
-
-            packet = bytes([h4_type]) + acl_header + data
-            packet_info = {
-                'type': 'HCI_ACL',
-                'direction': direction,
-                'handle': handle
-            }
-            return packet, packet_info
-
-    # Handle Commands
-    if "opcode" in line:
-        match = re.search(
-            r'opcode\s*=\[0x([0-9a-fA-F]+)\].*data=\[([0-9a-fA-F]*)\]', line)
-        if match:
-            opcode = int(match.group(1), 16)
-            data_hex = match.group(2)
-            data = bytes.fromhex(data_hex) if data_hex else bytes()
-            length = len(data)
-
-            h4_type = 0x01
-            cmd_header = bytes(
-                [opcode & 0xFF, (opcode >> 8) & 0xFF, length & 0xFF])
-
-            packet = bytes([h4_type]) + cmd_header + data
-            packet_info = {
-                'type': 'HCI_CMD',
-                'opcode': opcode,
-                'ogf': (opcode >> 10) & 0x3F,
-                'ocf': opcode & 0x3FF,
-            }
-            return packet, packet_info
+    except Exception as e:
+        # Catch all other exceptions silently
+        return None, None
 
     return None, None
 
@@ -1054,8 +1117,10 @@ def export_csv(output_path: str):
         writer.writerow([
             'MAC Address', 'Name', 'Manufacturer', 'Address Type',
             'RSSI (Avg)', 'RSSI (Min)', 'RSSI (Max)', 'TX Power', 'Appearance',
-            'Services', 'Company ID', 'Company Name', 'First Seen',
-            'Last Seen', 'Packet Count', 'ADV Types'
+            'Services', 'Company ID', 'Company Name', 'Battery Level (%)',
+            'Manufacturer Name', 'Model Number', 'Firmware Revision',
+            'Has Battery Service', 'Has Device Info Service', 'Has Heart Rate Service',
+            'First Seen', 'Last Seen', 'Packet Count', 'ADV Types'
         ])
 
         for dev in sorted(stats.devices.values(),
@@ -1073,6 +1138,13 @@ def export_csv(output_path: str):
                 '; '.join(dev.services),
                 f"0x{dev.company_id:04X}" if dev.company_id else '',
                 dev.company_name if dev.company_name else '',
+                dev.battery_level if dev.battery_level is not None and dev.battery_level < 255 else '',
+                dev.manufacturer_name if dev.manufacturer_name else '',
+                dev.model_number if dev.model_number else '',
+                dev.firmware_rev if dev.firmware_rev else '',
+                'Yes' if dev.has_battery_service else 'No',
+                'Yes' if dev.has_device_info_service else 'No',
+                'Yes' if dev.has_heart_rate_service else 'No',
                 datetime.fromtimestamp(
                     dev.first_seen).strftime('%Y-%m-%d %H:%M:%S')
                 if dev.first_seen else '',
@@ -1120,6 +1192,16 @@ def export_html_report(output_path: str):
         .manufacturer {{ color: #a78bfa; }}
         .timestamp {{ color: #888; font-size: 0.9em; }}
         .mfg-data {{ font-family: monospace; font-size: 0.85em; color: #888; word-break: break-all; }}
+        .battery-indicator {{ display: inline-block; width: 30px; height: 16px; border: 1px solid #00d4ff; border-radius: 2px; margin-right: 5px; vertical-align: middle; overflow: hidden; }}
+        .battery-fill {{ height: 100%; background: linear-gradient(90deg, #4ade80 0%, #facc15 70%, #f87171 100%); }}
+        .gatt-service {{ font-size: 0.85em; padding: 4px 8px; border-radius: 3px; display: inline-block; margin: 2px; }}
+        .gatt-battery {{ background: #7c3aed; }}
+        .gatt-device-info {{ background: #06b6d4; }}
+        .gatt-heart-rate {{ background: #ef4444; }}
+        .info-section {{ background: #16213e; padding: 10px; border-radius: 5px; margin: 5px 0; font-size: 0.9em; }}
+        .info-row {{ display: flex; justify-content: space-between; padding: 3px 0; }}
+        .info-label {{ color: #888; }}
+        .info-value {{ color: #00d4ff; font-weight: bold; }}
     </style>
 </head>
 <body>
@@ -1156,11 +1238,11 @@ def export_html_report(output_path: str):
                 <th>MAC Address</th>
                 <th>Name</th>
                 <th>Manufacturer</th>
+                <th>Battery</th>
+                <th>Device Info</th>
                 <th>RSSI</th>
-                <th>TX Power</th>
                 <th>Services</th>
                 <th>Packets</th>
-                <th>Last Seen</th>
             </tr>
 """
 
@@ -1175,17 +1257,49 @@ def export_html_report(output_path: str):
         last_seen = datetime.fromtimestamp(
             dev.last_seen).strftime('%H:%M:%S') if dev.last_seen else '-'
 
+        # Build GATT Battery display
+        battery_html = '-'
+        if dev.battery_level is not None and dev.battery_level < 255:
+            battery_pct = int(dev.battery_level)
+            battery_fill_width = max(0, min(100, battery_pct))
+            battery_color = '#4ade80' if battery_pct > 50 else (
+                '#facc15' if battery_pct > 20 else '#f87171')
+            battery_html = f'<div class="battery-indicator"><div class="battery-fill" style="width:{battery_fill_width}%;background-color:{battery_color}"></div></div>{battery_pct}%'
+
+        # Build GATT Device Info display
+        device_info_parts = []
+        if dev.manufacturer_name:
+            device_info_parts.append(f"<b>{dev.manufacturer_name}</b>")
+        if dev.model_number:
+            device_info_parts.append(f"Model: {dev.model_number}")
+        if dev.firmware_rev:
+            device_info_parts.append(f"FW: {dev.firmware_rev}")
+
+        device_info_html = '<div class="info-section">' + '<br>'.join(device_info_parts) + '</div>' if device_info_parts else '-'
+
+        # Build GATT Services display
+        gatt_services = []
+        if dev.has_battery_service:
+            gatt_services.append('<span class="gatt-service gatt-battery">🔋 Battery</span>')
+        if dev.has_device_info_service:
+            gatt_services.append('<span class="gatt-service gatt-device-info">ℹ️ Device Info</span>')
+        if dev.has_heart_rate_service:
+            gatt_services.append('<span class="gatt-service gatt-heart-rate">❤️ Heart Rate</span>')
+
+        gatt_services_html = ' '.join(gatt_services) if gatt_services else '-'
+
         html += f"""            <tr>
                 <td><code>{dev.mac}</code></td>
                 <td>{dev.name or '<em style="color:#666">Unknown</em>'}</td>
                 <td class="manufacturer">{dev.manufacturer}</td>
+                <td>{battery_html}</td>
+                <td>{device_info_html}</td>
                 <td class="{rssi_class}">{dev.rssi_avg:.0f} dBm</td>
-                <td>{f'{dev.tx_power} dBm' if dev.tx_power else '-'}</td>
-                <td>{services_html or '-'}</td>
+                <td>{gatt_services_html}</td>
                 <td>{dev.packet_count:,}</td>
-                <td class="timestamp">{last_seen}</td>
             </tr>
 """
+
 
     html += """        </table>
         

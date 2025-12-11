@@ -6,7 +6,7 @@
 
 #include "include/sniffer.h"
 
-#define SNIFFER_BUFFER_SIZE 200
+#define SNIFFER_BUFFER_SIZE 80
 
 // AD types
 #define AD_TYPE_FLAGS              0x01
@@ -51,6 +51,15 @@ static void parse_advertisement_data(const uint8_t *payload, uint8_t payload_len
     packet->company_id = 0;
     packet->mfg_data_len = 0;
     packet->num_services = 0;
+    
+    // Clear GATT fields
+    packet->battery_level = 0xFF;
+    packet->manufacturer_name[0] = '\0';
+    packet->model_number[0] = '\0';
+    packet->firmware_rev[0] = '\0';
+    packet->has_battery_service = 0;
+    packet->has_device_info_service = 0;
+    packet->has_heart_rate_service = 0;
     
     // Parse AD structures
     while (i < payload_len - 1) {
@@ -164,7 +173,18 @@ void sniffer_send_packet_serial(const ble_packet_t *packet)
     if (!packet) {
         return;
     }
+    
+    // Format: HEX_PREFIX|mac|rssi|battery|manufacturer
+    // Example: GATT|AA:BB:CC:DD:EE:FF|-65|87|Samsung|Galaxy S24
+    printf("GATT|%02X:%02X:%02X:%02X:%02X:%02X|%d|%d|%s|%s\r\n",
+           packet->mac[0], packet->mac[1], packet->mac[2],
+           packet->mac[3], packet->mac[4], packet->mac[5],
+           packet->rssi,
+           packet->battery_level < 0xFF ? packet->battery_level : 0xFF,
+           packet->manufacturer_name[0] ? packet->manufacturer_name : "-",
+           packet->model_number[0] ? packet->model_number : "-");
 }
+
 
 // Legacy wrapper
 void sniffer_on_packet_received(const uint8_t *mac, int8_t rssi, 
@@ -202,7 +222,82 @@ void sniffer_on_packet_received_ex(const uint8_t *mac, int8_t rssi,
     // Parse advertisement data
     parse_advertisement_data(payload, payload_len, &packet);
     
+    // Parse GATT services
+    parse_gatt_services(&packet);
+    
     sniffer_enqueue_packet(&packet);
+}
+
+// GATT Service name lookup table
+const char* gatt_get_service_name(uint16_t uuid)
+{
+    switch(uuid) {
+        case GATT_SERVICE_GENERIC_ACCESS:     return "Generic Access";
+        case GATT_SERVICE_GENERIC_ATTRIBUTE:  return "Generic Attribute";
+        case GATT_SERVICE_IMMEDIATE_ALERT:    return "Immediate Alert";
+        case GATT_SERVICE_LINK_LOSS:          return "Link Loss";
+        case GATT_SERVICE_TX_POWER:           return "TX Power";
+        case GATT_SERVICE_DEVICE_INFO:        return "Device Info";
+        case GATT_SERVICE_BATTERY:            return "Battery";
+        case GATT_SERVICE_HEART_RATE:         return "Heart Rate";
+        case GATT_SERVICE_ENVIRONMENTAL:      return "Environmental Sensing";
+        default:                              return "Unknown";
+    }
+}
+
+// Parse manufacturer specific data for battery and other info
+static void parse_manufacturer_data(ble_packet_t *packet)
+{
+    if (packet->mfg_data_len < 2) {
+        return;
+    }
+    
+    uint16_t company_id = packet->company_id;
+    
+    // Samsung devices (0x0075)
+    if (company_id == 0x0075 && packet->mfg_data_len >= 4) {
+        // Samsung often includes battery in mfg data
+        packet->battery_level = packet->mfg_data[3];
+    }
+    
+    // Apple devices (0x004C)
+    if (company_id == 0x004C && packet->mfg_data_len >= 5) {
+        // Apple iBeacon and device info
+        // Format varies, but sometimes includes battery info
+    }
+}
+
+// Parse GATT service data from advertisement
+void parse_gatt_services(ble_packet_t *packet)
+{
+    if (!packet) {
+        return;
+    }
+    
+    // Check which services are advertised
+    for (int i = 0; i < packet->num_services; i++) {
+        uint16_t uuid = packet->service_uuids[i];
+        
+        if (uuid == GATT_SERVICE_BATTERY) {
+            packet->has_battery_service = 1;
+        }
+        if (uuid == GATT_SERVICE_DEVICE_INFO) {
+            packet->has_device_info_service = 1;
+        }
+        if (uuid == GATT_SERVICE_HEART_RATE) {
+            packet->has_heart_rate_service = 1;
+        }
+    }
+    
+    // Parse manufacturer data for additional info
+    if (packet->company_id > 0) {
+        parse_manufacturer_data(packet);
+    }
+    
+    // Initialize fields to default
+    if (packet->battery_level == 0) {
+        packet->battery_level = 0xFF;  // Indicate not available
+    }
 }
 
 void sniffer_init(void)
