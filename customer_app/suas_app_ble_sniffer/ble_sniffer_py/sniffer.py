@@ -302,6 +302,7 @@ COMPANY_IDS = {
     0x038F: "Xiaomi",
     0x0822: "adidas",
     0x09A8: "Shenzhen",
+    0x0B37: "Anker"
 }
 
 # BLE Service UUIDs (16-bit)
