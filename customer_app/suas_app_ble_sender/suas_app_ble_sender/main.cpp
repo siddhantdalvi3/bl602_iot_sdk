@@ -1,6 +1,5 @@
 extern "C" {
 // FreeRTOS includes
-#include <config.h>
 #include <FreeRTOS.h>
 #include <task.h>
 
@@ -34,6 +33,9 @@ extern "C" {
 #include "include/central.h"
 #include "include/main.h"
 #include "include/peripheral.h"
+
+// Extern declaration for UART baud rate setting
+extern void bl_uart_setbaud(uint8_t id, uint32_t baud);
 }
 
 #include <etl/string.h>
@@ -193,15 +195,15 @@ static const struct cli_command cmd_table[] = {
 };
 
 /* Helper function to read device tree */
-static int get_dts_addr(etl::string_view name, uint32_t& start, uint32_t& off) {
+static int get_dts_addr(const char* name, uint32_t& start, uint32_t& off) {
   /* Check we get valid data*/
-  if (name.empty()) {
+  if (name == nullptr) {
     return -1;
   }
 
   /* Compute device tree data */
   auto fdt = reinterpret_cast<const void*>(hal_board_get_factory_addr());
-  auto offset = fdt_subnode_offset(fdt, 0, name.data());
+  auto offset = fdt_subnode_offset(fdt, 0, name);
 
   /* Check if offset is valid*/
   if (offset <= 0) {
@@ -241,12 +243,12 @@ void aos_loop_proc([[gnu::unused]] void* pvParameters) {
   vfs_device_init();
 
   /* Setup UART */
-  if (get_dts_addr(etl::string_view("uart"), fdt, offset) == 0) {
+  if (get_dts_addr("uart", fdt, offset) == 0) {
     vfs_uart_init(fdt, offset);
   }
 
   /* Setup GPIO */
-  if (get_dts_addr(etl::string_view("gpio"), fdt, offset) == 0) {
+  if (get_dts_addr("gpio", fdt, offset) == 0) {
     fdt_button_module_init(reinterpret_cast<const void*>(fdt),
                            static_cast<int>(offset));
   }
@@ -272,7 +274,7 @@ void aos_loop_proc([[gnu::unused]] void* pvParameters) {
   start_peripheral_application();
 
   /* Start periodic sender task */
-  xTaskCreate(periodic_sender_task, "sender", 512, NULL, 10, NULL);
+  xTaskCreate(periodic_sender_task, "sender", 2048, NULL, 10, NULL);
 
   aos_loop_run();
 
@@ -294,6 +296,8 @@ extern "C" void bfl_main(void) {
   bl_gpio_enable_output(LED_RED, 1, 0);
   bl_gpio_enable_output(LED_GREEN, 1, 0);
   board_leds_off();
+
+  printf("[MAIN] Booting suas_app_ble_sender...\r\n");
 
   /* Create tasks */
   xTaskCreateStatic(aos_loop_proc, etl::string_view("event loop").data(),

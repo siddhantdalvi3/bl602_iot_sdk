@@ -1,9 +1,9 @@
 COMPONENT_NAME := suas_app_ble_sniffer
 COMPONENT_TYPE := application
 
-COMPONENT_SOURCES := main.c \
-                     sniffer.c \
-                     scanner.c
+COMPONENT_SOURCES := main.cpp \
+                     sniffer.cpp \
+                     scanner.cpp
 
 COMPONENT_INCLUDES := .
 

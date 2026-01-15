@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief Initialize BLE scanner (starts BLE stack and scanning)
  */
@@ -29,6 +33,10 @@ void scanner_set_mode(uint8_t active);
  * @param adv_count Pointer to store advertisement count
  * @param scan_rsp_count Pointer to store scan response count
  */
-void scanner_get_stats(uint32_t *adv_count, uint32_t *scan_rsp_count);
+void scanner_get_stats(uint32_t* adv_count, uint32_t* scan_rsp_count);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __SCANNER_H__ */

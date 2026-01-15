@@ -19,7 +19,7 @@ CONFIG_BTSOONP_PRINT:=1
 
 # Increase RX buffer count for high-traffic sniffing
 # Default is 5-10, increase to handle more packets
-CONFIG_BT_RX_BUF_COUNT:=40
+CONFIG_BT_RX_BUF_COUNT:=200
 
 # Rate-limited btsnoop output (print every Nth packet)
 # Set to 1 for all packets, higher for less output

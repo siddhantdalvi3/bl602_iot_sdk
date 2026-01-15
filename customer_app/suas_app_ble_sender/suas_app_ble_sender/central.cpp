@@ -1,24 +1,21 @@
-// FreeRTOS
 extern "C" {
-#include <config.h>
+// FreeRTOS
 #include <FreeRTOS.h>
-}
 
 // Bluetooth stack
-extern "C" {
 #include <ble_lib_api.h>
 #include <gatt.h>
 #include <hci_driver.h>
 
 // AOS HAL
 #include <aos/yloop.h>
-}
 
 // Standard library
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+}
 
 // Own headers
 #include "include/ble.h"
@@ -26,14 +23,17 @@ extern "C" {
 
 /* Data structures used for bluetooth */
 static struct bt_uuid_16 uuid = BT_UUID_INIT_16(0);
+static struct bt_uuid_16 uuid_test_struct = BT_UUID_INIT_16(0xFFF0);
+static struct bt_uuid_16 uuid_test_rx_struct = BT_UUID_INIT_16(0xFFF1);
+static struct bt_uuid_16 uuid_gatt_ccc_struct = BT_UUID_INIT_16(0x2902);
 static struct bt_gatt_discover_params discover_params;
 static struct bt_gatt_subscribe_params subscribe_params;
 static struct bt_gatt_exchange_params exchange_params;
 static u16_t bt_gatt_write_without_handle = 0;
-static struct bt_conn *default_conn;
+static struct bt_conn* default_conn;
 
 /* Send message to peripheral device */
-extern "C" void ble_central_write() {
+void ble_central_write() {
   // Data to send
   char data[19] = "Hello from Central";
 
@@ -53,9 +53,9 @@ extern "C" void ble_central_write() {
 }
 
 /* Callback for received notifications */
-extern "C" uint8_t ble_central_notify_function(
-    [[gnu::unused]] struct bt_conn *conn,
-    [[gnu::unused]] struct bt_gatt_subscribe_params *params, const void *data,
+uint8_t ble_central_notify_function(
+    [[gnu::unused]] struct bt_conn* conn,
+    [[gnu::unused]] struct bt_gatt_subscribe_params* params, const void* data,
     uint16_t length) {
   /* Print received message */
   if (length > 0) {
@@ -77,15 +77,15 @@ extern "C" uint8_t ble_central_notify_function(
 }
 
 /* Callback function indicating MTU exchange */
-extern "C" void ble_exchange_mtu_cb(
-    struct bt_conn *conn, u8_t err,
-    [[gnu::unused]] struct bt_gatt_exchange_params *params) {
+void ble_exchange_mtu_cb(
+    struct bt_conn* conn, u8_t err,
+    [[gnu::unused]] struct bt_gatt_exchange_params* params) {
   printf("[CENTRAL] MTU exchange %s, new MTU size: %d\r\n",
          err == 0U ? "sucessful" : "failed", bt_gatt_get_mtu(conn));
 }
 
 /* Initiate MTU exchange */
-extern "C" void ble_central_exchange_mtu() {
+void ble_central_exchange_mtu() {
   if (!default_conn) {
     printf("[CENTRAL] Not connected!\r\n");
   } else {
@@ -104,9 +104,9 @@ extern "C" void ble_central_exchange_mtu() {
 }
 
 // Discover offered services
-extern "C" uint8_t ble_central_discovery_function(struct bt_conn *conn,
-                                       const struct bt_gatt_attr *attr,
-                                       struct bt_gatt_discover_params *params) {
+uint8_t ble_central_discovery_function(struct bt_conn* conn,
+                                       const struct bt_gatt_attr* attr,
+                                       struct bt_gatt_discover_params* params) {
   int err;
 
   // Empty attribute table
@@ -118,9 +118,9 @@ extern "C" uint8_t ble_central_discovery_function(struct bt_conn *conn,
 
   printf("[CENTRAL] Attribute handle %d\r\n", attr->handle);
   if (!bt_uuid_cmp(discover_params.uuid,
-                   BT_UUID_TEST)) {  // BT_UUID_TEST received
+                   &uuid_test_struct.uuid)) {  // BT_UUID_TEST received
     // Set discover data: discover characteristic with given TEST_RX UUID
-    memcpy(&uuid, BT_UUID_TEST_RX, sizeof(uuid));
+    memcpy(&uuid, &uuid_test_rx_struct, sizeof(uuid));
     discover_params.uuid = &uuid.uuid;
     discover_params.start_handle = attr->handle + 1;  // set start handle
     discover_params.type =
@@ -130,10 +130,10 @@ extern "C" uint8_t ble_central_discovery_function(struct bt_conn *conn,
     if (err) {
       printf("[CENTRAL] Discovery failed: %d\r\n", err);
     }
-  } else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_TEST_RX)) {
+  } else if (!bt_uuid_cmp(discover_params.uuid, &uuid_test_rx_struct.uuid)) {
     // Set discover data: Discover CCC descriptor with given UUID
     // and set value handler for subscription:
-    memcpy(&uuid, BT_UUID_GATT_CCC, sizeof(uuid));
+    memcpy(&uuid, &uuid_gatt_ccc_struct, sizeof(uuid));
     discover_params.uuid = &uuid.uuid;
     discover_params.start_handle = attr->handle + 2;
     discover_params.type = BT_GATT_DISCOVER_DESCRIPTOR;
@@ -144,7 +144,7 @@ extern "C" uint8_t ble_central_discovery_function(struct bt_conn *conn,
     if (err) {
       printf("[CENTRAL] Discovery failed: %d\r\n", err);
     }
-  } else if (!bt_uuid_cmp(discover_params.uuid, BT_UUID_GATT_CCC)) {
+  } else if (!bt_uuid_cmp(discover_params.uuid, &uuid_gatt_ccc_struct.uuid)) {
     // Allow sending notifications
     subscribe_params.notify =
         ble_central_notify_function;              // Register callback function
@@ -174,7 +174,7 @@ extern "C" uint8_t ble_central_discovery_function(struct bt_conn *conn,
 }
 
 /* Device connected */
-extern "C" void ble_central_connected(struct bt_conn *conn, uint8_t conn_err) {
+void ble_central_connected(struct bt_conn* conn, uint8_t conn_err) {
   // Convert bluetooth address to string
   char addr[BT_ADDR_LE_STR_LEN];
 
@@ -201,7 +201,7 @@ extern "C" void ble_central_connected(struct bt_conn *conn, uint8_t conn_err) {
   // device whose advertisement packets we used to instanciate the connection
   if (conn == default_conn) {
     // Service discovery -> Discover offered services
-    memcpy(&uuid, BT_UUID_TEST, sizeof(uuid));
+    memcpy(&uuid, &uuid_test_struct, sizeof(uuid));
     discover_params.uuid = &uuid.uuid;  // Set uuid to discover
     discover_params.func = ble_central_discovery_function;  // Callback function
     discover_params.start_handle = 0x0001;  // Included service start handle
@@ -224,7 +224,7 @@ extern "C" void ble_central_connected(struct bt_conn *conn, uint8_t conn_err) {
 }
 
 /* Device disconnected */
-extern "C" void ble_central_disconnected(struct bt_conn *conn, uint8_t reason) {
+void ble_central_disconnected(struct bt_conn* conn, uint8_t reason) {
   char addr[BT_ADDR_LE_STR_LEN];
 
   // Convert address to string
@@ -245,11 +245,19 @@ extern "C" void ble_central_disconnected(struct bt_conn *conn, uint8_t reason) {
 }
 
 // Struct for connection callbacks
-static struct bt_conn_cb conn_callbacks;
+static struct bt_conn_cb conn_callbacks = {
+    .connected = ble_central_connected,
+    .disconnected = ble_central_disconnected,
+    .le_param_req = NULL,
+    .le_param_updated = NULL,
+    .identity_resolved = NULL,
+    .security_changed = NULL,
+    ._next = NULL,
+};
 
 // Evalue data callback: parse data we received from peripheral device
-extern "C" bool data_cb(struct bt_data *data, void *user_data) {
-  char *name = (char*)user_data;
+bool data_cb(struct bt_data* data, void* user_data) {
+  char* name = (char*)user_data;
   u8_t len;
 
   switch (data->type) {
@@ -265,17 +273,18 @@ extern "C" bool data_cb(struct bt_data *data, void *user_data) {
 }
 
 /* Found possible peripheral callback */
-extern "C" void ble_central_device_found(const bt_addr_le_t *addr, int8_t rssi,
-                              uint8_t type, struct net_buf_simple *ad) {
+void ble_central_device_found(const bt_addr_le_t* addr, int8_t rssi,
+                              uint8_t type, struct net_buf_simple* ad) {
   char dev[BT_ADDR_LE_STR_LEN];
   char name[NAME_LEN];
 
   // Set connection parameters
-  struct bt_le_conn_param param;
-  param.interval_min = BT_GAP_INIT_CONN_INT_MIN;
-  param.interval_max = BT_GAP_INIT_CONN_INT_MAX;
-  param.latency = 0;
-  param.timeout = 400;
+  struct bt_le_conn_param param = {
+      .interval_min = BT_GAP_INIT_CONN_INT_MIN,
+      .interval_max = BT_GAP_INIT_CONN_INT_MAX,
+      .latency = 0,
+      .timeout = 400,
+  };
 
   // Convert address to string
   bt_addr_le_to_str(addr, dev, sizeof(dev));
@@ -318,7 +327,7 @@ extern "C" void ble_central_device_found(const bt_addr_le_t *addr, int8_t rssi,
 }
 
 /* Scan for peripherals (advertisement packets) */
-extern "C" void ble_central_start_scanning() {
+void ble_central_start_scanning() {
   // Set scanning parameters
   struct bt_le_scan_param scan_param;
   scan_param.type = BT_LE_SCAN_TYPE_PASSIVE;
@@ -342,7 +351,7 @@ extern "C" void ble_central_start_scanning() {
 }
 
 /* Bluetooth started callback: start scanning for peripherals*/
-extern "C" void ble_central_init(int err) {
+void ble_central_init(int err) {
   if (err != 0) {
     printf("[CENTRAL] Bluetooth initialization failed\r\n");
   } else {
@@ -354,7 +363,7 @@ extern "C" void ble_central_init(int err) {
 }
 
 /* Start application: initialize controller */
-extern "C" void start_central_application() {
+void start_central_application() {
   // Start up controller
   ble_controller_init(configMAX_PRIORITIES - 1);
 
@@ -371,7 +380,5 @@ extern "C" void start_central_application() {
   }
 
   // Register connection callbacks
-  conn_callbacks.connected = ble_central_connected;
-  conn_callbacks.disconnected = ble_central_disconnected;
   bt_conn_cb_register(&conn_callbacks);
 }
