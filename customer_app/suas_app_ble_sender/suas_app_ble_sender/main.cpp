@@ -104,12 +104,12 @@ void event_cb_ble_event(input_event_t* event,
       // Peripheral: do NOT restart advertising (BLE stack handles
       // re-advertising automatically) Just wait for next connection attempt
     } break;
-    /* Only called by central: exchange MTU size*/
+
     case BLE_DEV_SUBSCRIBED:
       bl_gpio_output_set(LED_GREEN, 0);
       ble_central_exchange_mtu();
       break;
-    /* Unknown event */
+
     default:
       printf("[BLE] Unknown code\r\n");
   }

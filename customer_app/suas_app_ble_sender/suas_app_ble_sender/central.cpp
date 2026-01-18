@@ -39,14 +39,7 @@ void ble_central_write() {
 
   // Check if connection is available
   if (default_conn != NULL) {
-    /* Send message
-        Parameters:
-            1: Connection
-            2: Attribute handle
-            3: Data to send
-            4: Data length
-            5: Whether to sign data
-    */
+    // Send data without response
     bt_gatt_write_without_response(default_conn, bt_gatt_write_without_handle,
                                    data, 19, 0);
   }
@@ -151,11 +144,7 @@ uint8_t ble_central_discovery_function(struct bt_conn* conn,
     subscribe_params.value = BT_GATT_CCC_NOTIFY;  // Set subscription value
     subscribe_params.ccc_handle = attr->handle;   // Set handle
 
-    /* Subscribe for notifications:
-        Parameters:
-            1: Connection
-                2: Subscription parameters
-    */
+    // Subscribe to notifications
     err = bt_gatt_subscribe(conn, &subscribe_params);
     if (err && err != -EALREADY) {
       printf("[CENTRAL] Subscribe failed: %d\r\n", err);
@@ -178,10 +167,7 @@ void ble_central_connected(struct bt_conn* conn, uint8_t conn_err) {
   // Convert bluetooth address to string
   char addr[BT_ADDR_LE_STR_LEN];
 
-  /* Parameters:
-      1: Get connection object
-      2: Address of buffer containing the address
-      3: Length of the address */
+  // Get connection address
   bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
   // Clean up data structures if connection fails
@@ -212,9 +198,6 @@ void ble_central_connected(struct bt_conn* conn, uint8_t conn_err) {
         BT_GATT_DISCOVER_PRIMARY;  // Service type to discover
 
     // Call service discovery function
-    //  Parameters:
-    //      1: Connection object
-    //      2: Discover parameters
     int err = bt_gatt_discover(default_conn, &discover_params);
     if (err) {
       printf("[CENTRAL] Device discovery failed: %d\r\n", err);
@@ -301,20 +284,12 @@ void ble_central_device_found(const bt_addr_le_t* addr, int8_t rssi,
     // Parse advertising data, shorten name
     memset(name, 0, sizeof(name));
 
-    // Parsing function
-    //  Parameters:
-    //      1: Advertising data we received
-    //      2: Callback function which parses each element
-    //      3: User data to be passed to the callback
+    // Parse advertising data
     bt_data_parse(ad, data_cb, name);
     printf("[CENTRAL] Device found: %s, RSSI: %i, Name: %s\r\n", dev, rssi,
            name);
 
-    /* Try to connect
-        Parameters:
-            1: Address of remote device
-            2: (Initial) connection parameters
-    */
+    // Try to connect
     default_conn = bt_conn_create_le(addr, &param);
 
     /* Check connection status */
@@ -335,10 +310,7 @@ void ble_central_start_scanning() {
   scan_param.interval = 0x80;
   scan_param.window = 0x40;
 
-  /* Start scanning:
-      Parameters:
-          1: Scan parameters
-          2: Callback function */
+  // Start scanning
   int err = bt_le_scan_start(&scan_param, ble_central_device_found);
   if (err) {
     printf("[CENTRAL] Scanning failed: %d\r\n", err);

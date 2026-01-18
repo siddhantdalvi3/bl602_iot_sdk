@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
 """
-BL602 BLE Sniffer - Enhanced v3.0
-=================================
-Comprehensive BLE packet capture with multiple output formats.
+Simple BLE Sniffer for BL602
+Connects to the UART, parses HCI packets, and dumps them to Wireshark/JSON/CSV.
 
-Features:
-- Real-time Wireshark integration (PCAP/FIFO)
-- JSON export for data analysis
-- CSV export for spreadsheets
-- HTML report generation
-- Device database with manufacturer lookup
-- Full advertisement data decoding
-- Statistics and analytics
-
-Author: BL602 IoT SDK Team
+Usage:
+    python3 sniffer.py /dev/ttyUSB0
 """
 
 import serial
@@ -24,6 +15,10 @@ import re
 import os
 import json
 import csv
+import asyncio
+import websockets
+import threading
+import queue
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Dict, List, Any, Tuple
@@ -31,9 +26,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 
-# =============================================================================
-# ANSI Colors
-# =============================================================================
+# Quick hack for colors in terminal
 class Colors:
     RESET = '\033[0m'
     RED = '\033[91m'
@@ -51,390 +44,6 @@ class Colors:
         Colors.YELLOW = Colors.BLUE = Colors.MAGENTA = ''
         Colors.CYAN = Colors.GRAY = Colors.BOLD = ''
 
-
-# =============================================================================
-# OUI Manufacturer Database (IEEE)
-# =============================================================================
-OUI_DATABASE = {
-    # Apple
-    "00:1C:B3": "Apple",
-    "00:03:93": "Apple",
-    "00:0A:95": "Apple",
-    "00:17:F2": "Apple",
-    "00:1E:52": "Apple",
-    "00:21:E9": "Apple",
-    "00:22:41": "Apple",
-    "00:23:12": "Apple",
-    "00:23:32": "Apple",
-    "00:23:6C": "Apple",
-    "00:23:DF": "Apple",
-    "00:24:36": "Apple",
-    "00:25:00": "Apple",
-    "00:25:BC": "Apple",
-    "00:26:08": "Apple",
-    "00:26:4A": "Apple",
-    "00:26:B0": "Apple",
-    "00:26:BB": "Apple",
-    "28:CF:DA": "Apple",
-    "34:C0:59": "Apple",
-    "3C:07:54": "Apple",
-    "40:33:1A": "Apple",
-    "54:4E:90": "Apple",
-    "58:B0:35": "Apple",
-    "5C:F7:E6": "Apple",
-    "60:C5:47": "Apple",
-    "78:31:C1": "Apple",
-    "78:CA:39": "Apple",
-    "84:85:06": "Apple",
-    "8C:85:90": "Apple",
-    "9C:04:EB": "Apple",
-    "A4:B1:97": "Apple",
-    "A8:86:DD": "Apple",
-    "AC:BC:32": "Apple",
-    "B0:65:BD": "Apple",
-    "B8:C7:5D": "Apple",
-    "B8:E8:56": "Apple",
-    "BC:52:B7": "Apple",
-    "C4:2C:03": "Apple",
-    "C8:69:CD": "Apple",
-    "CC:08:E0": "Apple",
-    "D0:E1:40": "Apple",
-    "D4:F4:6F": "Apple",
-    "DC:2B:2A": "Apple",
-    "E0:B5:2D": "Apple",
-    "F0:B4:79": "Apple",
-    "F4:1B:A1": "Apple",
-
-    # Samsung
-    "00:12:47": "Samsung",
-    "00:13:77": "Samsung",
-    "00:15:99": "Samsung",
-    "00:16:32": "Samsung",
-    "00:17:C9": "Samsung",
-    "00:17:D5": "Samsung",
-    "00:18:AF": "Samsung",
-    "00:1A:8A": "Samsung",
-    "00:1B:98": "Samsung",
-    "00:1C:43": "Samsung",
-    "00:1D:25": "Samsung",
-    "00:1D:F6": "Samsung",
-    "00:1E:7D": "Samsung",
-    "00:1F:CC": "Samsung",
-    "00:1F:CD": "Samsung",
-    "00:21:4C": "Samsung",
-    "00:21:D1": "Samsung",
-    "00:21:D2": "Samsung",
-    "50:01:BB": "Samsung",
-    "50:F5:20": "Samsung",
-    "54:88:0E": "Samsung",
-    "5C:0A:5B": "Samsung",
-    "78:BD:BC": "Samsung",
-    "8C:77:12": "Samsung",
-    "94:35:0A": "Samsung",
-    "A0:82:1F": "Samsung",
-    "AC:5F:3E": "Samsung",
-    "BC:20:A4": "Samsung",
-    "C4:42:02": "Samsung",
-    "C8:38:70": "Samsung",
-    "D0:22:BE": "Samsung",
-    "E4:7C:F9": "Samsung",
-    "F8:04:2E": "Samsung",
-
-    # Google
-    "00:1A:11": "Google",
-    "3C:5A:B4": "Google",
-    "54:60:09": "Google",
-    "94:EB:2C": "Google",
-    "F4:F5:D8": "Google",
-    "F8:8F:CA": "Google",
-
-    # Microsoft
-    "00:0D:3A": "Microsoft",
-    "00:12:5A": "Microsoft",
-    "00:15:5D": "Microsoft",
-    "00:17:FA": "Microsoft",
-    "00:1D:D8": "Microsoft",
-    "00:22:48": "Microsoft",
-    "00:25:AE": "Microsoft",
-    "00:50:F2": "Microsoft",
-    "28:18:78": "Microsoft",
-    "7C:1E:52": "Microsoft",
-    "7C:ED:8D": "Microsoft",
-
-    # Amazon
-    "00:FC:8B": "Amazon",
-    "0C:47:C9": "Amazon",
-    "10:CE:A9": "Amazon",
-    "18:74:2E": "Amazon",
-    "34:D2:70": "Amazon",
-    "40:B4:CD": "Amazon",
-    "44:65:0D": "Amazon",
-    "50:DC:E7": "Amazon",
-    "68:37:E9": "Amazon",
-    "74:C2:46": "Amazon",
-    "84:D6:D0": "Amazon",
-    "A0:02:DC": "Amazon",
-    "AC:63:BE": "Amazon",
-    "B4:7C:9C": "Amazon",
-    "F0:27:2D": "Amazon",
-    "FC:65:DE": "Amazon",
-
-    # Xiaomi
-    "04:CF:8C": "Xiaomi",
-    "0C:1D:AF": "Xiaomi",
-    "10:2A:B3": "Xiaomi",
-    "14:F6:5A": "Xiaomi",
-    "18:59:36": "Xiaomi",
-    "20:34:FB": "Xiaomi",
-    "28:6C:07": "Xiaomi",
-    "34:80:B3": "Xiaomi",
-    "38:A4:ED": "Xiaomi",
-    "3C:BD:D8": "Xiaomi",
-    "44:23:7C": "Xiaomi",
-    "50:64:2B": "Xiaomi",
-    "58:44:98": "Xiaomi",
-    "64:09:80": "Xiaomi",
-    "64:B4:73": "Xiaomi",
-    "7C:1C:4E": "Xiaomi",
-    "84:F3:EB": "Xiaomi",
-    "8C:BE:BE": "Xiaomi",
-    "98:FA:E3": "Xiaomi",
-    "9C:99:A0": "Xiaomi",
-    "A4:77:33": "Xiaomi",
-    "B0:E2:35": "Xiaomi",
-    "C4:6A:B7": "Xiaomi",
-    "D4:97:0B": "Xiaomi",
-    "E4:46:DA": "Xiaomi",
-    "F0:B4:29": "Xiaomi",
-    "F8:A4:5F": "Xiaomi",
-
-    # Espressif (ESP32/ESP8266)
-    "24:0A:C4": "Espressif",
-    "24:6F:28": "Espressif",
-    "24:B2:DE": "Espressif",
-    "30:AE:A4": "Espressif",
-    "3C:61:05": "Espressif",
-    "3C:71:BF": "Espressif",
-    "40:F5:20": "Espressif",
-    "48:3F:DA": "Espressif",
-    "4C:11:AE": "Espressif",
-    "5C:CF:7F": "Espressif",
-    "60:01:94": "Espressif",
-    "68:C6:3A": "Espressif",
-    "7C:9E:BD": "Espressif",
-    "80:7D:3A": "Espressif",
-    "84:0D:8E": "Espressif",
-    "84:CC:A8": "Espressif",
-    "84:F3:EB": "Espressif",
-    "8C:AA:B5": "Espressif",
-    "94:B9:7E": "Espressif",
-    "98:F4:AB": "Espressif",
-    "A0:20:A6": "Espressif",
-    "A4:7B:9D": "Espressif",
-    "A4:CF:12": "Espressif",
-    "AC:67:B2": "Espressif",
-    "B4:E6:2D": "Espressif",
-    "BC:DD:C2": "Espressif",
-    "C4:4F:33": "Espressif",
-    "C8:2B:96": "Espressif",
-    "CC:50:E3": "Espressif",
-    "D8:A0:1D": "Espressif",
-    "DC:4F:22": "Espressif",
-    "E0:98:06": "Espressif",
-    "E8:DB:84": "Espressif",
-    "EC:FA:BC": "Espressif",
-    "F0:08:D1": "Espressif",
-    "F4:CF:A2": "Espressif",
-
-    # Nordic Semiconductor
-    "C0:A5:E3": "Nordic",
-    "C6:5A:B8": "Nordic",
-    "D4:CA:6E": "Nordic",
-    "E7:8B:2E": "Nordic",
-    "F0:5C:D5": "Nordic",
-    "F2:4E:B9": "Nordic",
-
-    # Bouffalo Lab (BL602)
-    "18:B9:05": "Bouffalo Lab",
-
-    # Texas Instruments
-    "00:12:37": "Texas Instruments",
-    "00:17:83": "Texas Instruments",
-    "00:18:30": "Texas Instruments",
-    "00:18:31": "Texas Instruments",
-    "00:18:32": "Texas Instruments",
-    "00:18:33": "Texas Instruments",
-    "00:18:34": "Texas Instruments",
-    "04:A3:16": "Texas Instruments",
-    "34:03:DE": "Texas Instruments",
-    "50:65:83": "Texas Instruments",
-    "78:C5:E5": "Texas Instruments",
-    "98:7B:F3": "Texas Instruments",
-    "A0:E6:F8": "Texas Instruments",
-    "B0:B4:48": "Texas Instruments",
-    "C4:BE:84": "Texas Instruments",
-    "D0:39:72": "Texas Instruments",
-    "D0:B5:C2": "Texas Instruments",
-    "D4:36:39": "Texas Instruments",
-    "F4:B8:5E": "Texas Instruments",
-
-    # Fitbit
-    "39:91:FB": "Fitbit",
-    "50:A4:D0": "Fitbit",
-    "C0:D0:12": "Fitbit",
-
-    # Tile
-    "E4:F0:42": "Tile",
-    "D0:03:4B": "Tile",
-}
-
-# BLE Company Identifiers (Bluetooth SIG)
-COMPANY_IDS = {
-    0x0006: "Microsoft",
-    0x004C: "Apple",
-    0x0075: "Samsung",
-    0x0087: "Garmin",
-    0x00D2: "Google",
-    0x00E0: "Google",
-    0x0157: "Polar",
-    0x01D2: "Xiaomi",
-    0x0310: "Amazfit",
-    0x038F: "Xiaomi",
-    0x0822: "adidas",
-    0x09A8: "Shenzhen",
-    0x0B37: "Anker"
-}
-
-# BLE Service UUIDs (16-bit)
-SERVICE_UUIDS = {
-    0x1800: "Generic Access",
-    0x1801: "Generic Attribute",
-    0x1802: "Immediate Alert",
-    0x1803: "Link Loss",
-    0x1804: "Tx Power",
-    0x1805: "Current Time",
-    0x1806: "Reference Time Update",
-    0x1807: "Next DST Change",
-    0x1808: "Glucose",
-    0x1809: "Health Thermometer",
-    0x180A: "Device Information",
-    0x180D: "Heart Rate",
-    0x180E: "Phone Alert Status",
-    0x180F: "Battery",
-    0x1810: "Blood Pressure",
-    0x1811: "Alert Notification",
-    0x1812: "Human Interface Device",
-    0x1813: "Scan Parameters",
-    0x1814: "Running Speed and Cadence",
-    0x1815: "Automation IO",
-    0x1816: "Cycling Speed and Cadence",
-    0x1818: "Cycling Power",
-    0x1819: "Location and Navigation",
-    0x181A: "Environmental Sensing",
-    0x181B: "Body Composition",
-    0x181C: "User Data",
-    0x181D: "Weight Scale",
-    0x181E: "Bond Management",
-    0x181F: "Continuous Glucose Monitoring",
-    0x1820: "Internet Protocol Support",
-    0x1821: "Indoor Positioning",
-    0x1822: "Pulse Oximeter",
-    0x1823: "HTTP Proxy",
-    0x1824: "Transport Discovery",
-    0x1825: "Object Transfer",
-    0x1826: "Fitness Machine",
-    0x1827: "Mesh Provisioning",
-    0x1828: "Mesh Proxy",
-    0xFE9F: "Google",
-    0xFEAA: "Google Eddystone",
-    0xFD6F: "Apple Exposure Notification",
-}
-
-# GATT Characteristics (16-bit UUIDs)
-GATT_CHARACTERISTICS = {
-    0x2A00: "Device Name",
-    0x2A01: "Appearance",
-    0x2A02: "Peripheral Privacy Flag",
-    0x2A03: "Reconnection Address",
-    0x2A04: "Peripheral Preferred Connection Parameters",
-    0x2A05: "Service Changed",
-    0x2A19: "Battery Level",
-    0x2A24: "Model Number String",
-    0x2A25: "Serial Number String",
-    0x2A26: "Firmware Revision String",
-    0x2A27: "Hardware Revision String",
-    0x2A28: "Software Revision String",
-    0x2A29: "Manufacturer Name String",
-    0x2A37: "Heart Rate Measurement",
-    0x2A38: "Body Sensor Location",
-    0x2A8E: "TX Power Level",
-}
-
-# BLE Appearance values
-APPEARANCES = {
-    0x0000: "Unknown",
-    0x0040: "Generic Phone",
-    0x0080: "Generic Computer",
-    0x00C0: "Generic Watch",
-    0x00C1: "Sports Watch",
-    0x0100: "Generic Clock",
-    0x0140: "Generic Display",
-    0x0180: "Generic Remote Control",
-    0x01C0: "Generic Eye-glasses",
-    0x0200: "Generic Tag",
-    0x0240: "Generic Keyring",
-    0x0280: "Generic Media Player",
-    0x02C0: "Generic Barcode Scanner",
-    0x0300: "Generic Thermometer",
-    0x0340: "Generic Heart Rate Sensor",
-    0x0380: "Generic Blood Pressure",
-    0x03C0: "Generic HID",
-    0x03C1: "Keyboard",
-    0x03C2: "Mouse",
-    0x03C3: "Joystick",
-    0x03C4: "Gamepad",
-    0x0440: "Generic Glucose Meter",
-    0x0480: "Generic Running/Walking Sensor",
-    0x04C0: "Generic Cycling",
-    0x0540: "Generic Pulse Oximeter",
-    0x0580: "Generic Weight Scale",
-    0x05C0: "Generic Outdoor Sports",
-}
-
-# HCI Event Code Names
-HCI_EVENT_NAMES = {
-    0x0E: "Command Complete",
-    0x0F: "Command Status",
-    0x3E: "LE Meta Event",
-    0x13: "Number of Completed Packets",
-    0x05: "Disconnection Complete",
-    0x08: "Encryption Change",
-    0x0C: "Read Remote Version Complete",
-    0x10: "Hardware Error",
-}
-
-# LE Meta Subevent Names
-LE_META_SUBEVENTS = {
-    0x01: "LE Connection Complete",
-    0x02: "LE Advertising Report",
-    0x03: "LE Connection Update Complete",
-    0x04: "LE Read Remote Features Complete",
-    0x05: "LE Long Term Key Request",
-    0x06: "LE Remote Connection Parameter Request",
-    0x07: "LE Data Length Change",
-    0x0A: "LE Enhanced Connection Complete",
-    0x0D: "LE Extended Advertising Report",
-}
-
-# HCI Command OGF Names
-HCI_OGF_NAMES = {
-    0x01: "Link Control",
-    0x02: "Link Policy",
-    0x03: "Controller & Baseband",
-    0x04: "Informational",
-    0x05: "Status",
-    0x08: "LE Controller",
-}
 
 
 # =============================================================================
@@ -462,7 +71,7 @@ class BLEDevice:
     packet_count: int = 0
     adv_types_seen: set = field(default_factory=set)
     raw_mfg_data: bytes = b''
-    
+
     # GATT Service Information (Phase 2)
     battery_level: Optional[int] = None
     manufacturer_name: str = ""
@@ -521,7 +130,7 @@ class BLEDevice:
             list(self.adv_types_seen),
             'mfg_data_hex':
             self.raw_mfg_data.hex() if self.raw_mfg_data else None,
-            
+
             # GATT Service Data
             'battery_level':
             self.battery_level,
@@ -610,6 +219,15 @@ class SnifferStats:
         )
 
         if packet_info:
+            # Send to WebSocket
+            try:
+                ws_queue.put(packet_info)
+            except NameError:
+                pass  # ws_queue might not be defined yet during init
+            except Exception as e:
+                # print(f"WS Queue Error: {e}")
+                pass
+
             ptype = packet_info.get('type', 'unknown')
             self.packet_types[ptype] += 1
 
@@ -696,26 +314,27 @@ class SnifferStats:
 
         if packet_info.get('mfg_data'):
             device.raw_mfg_data = packet_info['mfg_data']
-        
+
         # GATT Service Data (Phase 2)
-        if packet_info.get('battery_level') is not None and packet_info.get('battery_level') != 0xFF:
+        if packet_info.get('battery_level') is not None and packet_info.get(
+                'battery_level') != 0xFF:
             device.battery_level = packet_info['battery_level']
-        
+
         if packet_info.get('manufacturer_name'):
             device.manufacturer_name = packet_info['manufacturer_name']
-        
+
         if packet_info.get('model_number'):
             device.model_number = packet_info['model_number']
-        
+
         if packet_info.get('firmware_rev'):
             device.firmware_rev = packet_info['firmware_rev']
-        
+
         if packet_info.get('has_battery_service'):
             device.has_battery_service = True
-        
+
         if packet_info.get('has_device_info_service'):
             device.has_device_info_service = True
-        
+
         if packet_info.get('has_heart_rate_service'):
             device.has_heart_rate_service = True
 
@@ -822,6 +441,11 @@ def write_pcap_packet(f,
 # =============================================================================
 # Advertisement Data Parsing
 # =============================================================================
+def hex_to_ascii(data: bytes) -> str:
+    """Convert bytes to ASCII string, replacing non-printables with dot"""
+    return ''.join(chr(b) if 32 <= b <= 126 else '.' for b in data)
+
+
 def parse_ad_structures(data: bytes) -> dict:
     """Parse BLE advertising data structures"""
     result = {
@@ -878,7 +502,7 @@ def parse_ad_structures(data: bytes) -> dict:
                         svc_name = SERVICE_UUIDS.get(uuid, f"0x{uuid:04X}")
                         if svc_name not in result['services']:
                             result['services'].append(svc_name)
-                        
+
                         # Detect GATT services
                         if uuid == 0x180F:  # Battery Service
                             result['has_battery_service'] = True
@@ -893,16 +517,17 @@ def parse_ad_structures(data: bytes) -> dict:
                 if len(ad_data) >= 2:
                     result['company_id'] = ad_data[0] | (ad_data[1] << 8)
                     result['mfg_data'] = bytes(ad_data[2:])
-                    
+                    result['mfg_data_ascii'] = hex_to_ascii(result['mfg_data'])
+
                     # Extract battery from manufacturer-specific data
                     try:
                         company_id = result['company_id']
                         mfg_bytes = ad_data[2:]
-                        
+
                         # Samsung (0x0075) - battery at offset 3
                         if company_id == 0x0075 and len(mfg_bytes) >= 4:
                             result['battery_level'] = mfg_bytes[3]
-                        
+
                         # Apple (0x004C) - various formats, try common battery patterns
                         elif company_id == 0x004C and len(mfg_bytes) >= 5:
                             # Apple sometimes encodes battery in specific positions
@@ -956,6 +581,7 @@ def decode_le_advertising_report(data: bytes) -> Optional[dict]:
             'company_id': ad_info['company_id'],
             'flags': ad_info['flags'],
             'mfg_data': ad_info['mfg_data'],
+            'mfg_data_ascii': ad_info.get('mfg_data_ascii', ''),
         }
     except Exception as e:
         return None
@@ -1014,12 +640,43 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
         # Normalize line - replace Unicode × with x (multiplication sign vs letter x)
         line = line.replace('×', 'x')
 
+        # Handle HCI Commands (opcode based log)
+        # Format: [btsnoop]:opcode =[0xc03],len =[0x0],data=[]
+        # Updated regex to allow spaces in data
+        match_cmd = re.search(
+            r'opcode\s*=\s*\[\s*0x([0-9a-fA-F]+)\s*\].*data\s*=\s*\[\s*([0-9a-fA-F\s]*)\s*\]',
+            line, re.IGNORECASE)
+        if match_cmd:
+            opcode_int = int(match_cmd.group(1), 16)
+            data_str = match_cmd.group(2).replace(' ',
+                                                  '')  # Remove spaces if any
+            data = bytes.fromhex(data_str) if data_str else b''
+
+            # Construct HCI Command Packet (Type 0x01)
+            # Opcode is 2 bytes Little Endian
+            h4_type = 0x01
+            packet = bytes([h4_type]) + struct.pack('<H', opcode_int) + bytes(
+                [len(data)]) + data
+
+            packet_info = {
+                'type': 'HCI_CMD',
+                'opcode': opcode_int,
+                'len': len(data),
+                'payload': data,
+                'payload_ascii': hex_to_ascii(data)
+            }
+            return packet, packet_info
+
         # Handle HCI Events
+        # Relaxed regex to handle spaces and empty data
         match = re.search(
-            r'pkt_type\s*=\[0x([0-9a-fA-F]+)\].*data=\[([0-9a-fA-F]+)\]', line)
+            r'pkt_type\s*=\s*\[\s*0x([0-9a-fA-F]+)\s*\].*data\s*=\s*\[\s*([0-9a-fA-F\s]*)\s*\]',
+            line, re.IGNORECASE)
         if match:
             pkt_type_int = int(match.group(1), 16)
-            data = bytes.fromhex(match.group(2))
+            # data might be empty string
+            data_str = match.group(2).replace(' ', '')  # Remove spaces if any
+            data = bytes.fromhex(data_str) if data_str else b''
 
             if pkt_type_int == 4:  # LE Event
                 h4_type = 0x04
@@ -1031,6 +688,8 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
                     'type': 'HCI_EVT',
                     'event_code': evt_code,
                     'subevent': data[0] if data else 0,
+                    'payload': data,
+                    'payload_ascii': hex_to_ascii(data)
                 }
 
                 if data and data[0] == 0x02:
@@ -1045,7 +704,9 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
                 packet = bytes([h4_type]) + data
                 packet_info = {
                     'type': 'HCI_EVT',
-                    'event_code': data[0] if data else 0
+                    'event_code': data[0] if data else 0,
+                    'payload': data,
+                    'payload_ascii': hex_to_ascii(data)
                 }
                 return packet, packet_info
 
@@ -1054,7 +715,12 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
                 evt_code = 0x0E
                 length = len(data)
                 packet = bytes([h4_type, evt_code, length]) + data
-                packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
+                packet_info = {
+                    'type': 'HCI_EVT',
+                    'event_code': evt_code,
+                    'payload': data,
+                    'payload_ascii': hex_to_ascii(data)
+                }
                 return packet, packet_info
 
             elif pkt_type_int == 3:  # Command Status
@@ -1062,15 +728,18 @@ def parse_line(line: str) -> Tuple[Optional[bytes], Optional[dict]]:
                 evt_code = 0x0F
                 length = len(data)
                 packet = bytes([h4_type, evt_code, length]) + data
-                packet_info = {'type': 'HCI_EVT', 'event_code': evt_code}
+                packet_info = {
+                    'type': 'HCI_EVT',
+                    'event_code': evt_code,
+                    'payload': data,
+                    'payload_ascii': hex_to_ascii(data)
+                }
                 return packet, packet_info
 
     except (ValueError, struct.error) as e:
-        # Return None for unparseable packets - will be counted as error but won't crash
-        return None, None
+        return None, {'error': str(e)}
     except Exception as e:
-        # Catch all other exceptions silently
-        return None, None
+        return None, {'error': str(e)}
 
     return None, None
 
@@ -1120,8 +789,9 @@ def export_csv(output_path: str):
             'RSSI (Avg)', 'RSSI (Min)', 'RSSI (Max)', 'TX Power', 'Appearance',
             'Services', 'Company ID', 'Company Name', 'Battery Level (%)',
             'Manufacturer Name', 'Model Number', 'Firmware Revision',
-            'Has Battery Service', 'Has Device Info Service', 'Has Heart Rate Service',
-            'First Seen', 'Last Seen', 'Packet Count', 'ADV Types'
+            'Has Battery Service', 'Has Device Info Service',
+            'Has Heart Rate Service', 'First Seen', 'Last Seen',
+            'Packet Count', 'ADV Types'
         ])
 
         for dev in sorted(stats.devices.values(),
@@ -1139,7 +809,8 @@ def export_csv(output_path: str):
                 '; '.join(dev.services),
                 f"0x{dev.company_id:04X}" if dev.company_id else '',
                 dev.company_name if dev.company_name else '',
-                dev.battery_level if dev.battery_level is not None and dev.battery_level < 255 else '',
+                dev.battery_level if dev.battery_level is not None
+                and dev.battery_level < 255 else '',
                 dev.manufacturer_name if dev.manufacturer_name else '',
                 dev.model_number if dev.model_number else '',
                 dev.firmware_rev if dev.firmware_rev else '',
@@ -1276,16 +947,22 @@ def export_html_report(output_path: str):
         if dev.firmware_rev:
             device_info_parts.append(f"FW: {dev.firmware_rev}")
 
-        device_info_html = '<div class="info-section">' + '<br>'.join(device_info_parts) + '</div>' if device_info_parts else '-'
+        device_info_html = '<div class="info-section">' + '<br>'.join(
+            device_info_parts) + '</div>' if device_info_parts else '-'
 
         # Build GATT Services display
         gatt_services = []
         if dev.has_battery_service:
-            gatt_services.append('<span class="gatt-service gatt-battery">🔋 Battery</span>')
+            gatt_services.append(
+                '<span class="gatt-service gatt-battery">🔋 Battery</span>')
         if dev.has_device_info_service:
-            gatt_services.append('<span class="gatt-service gatt-device-info">ℹ️ Device Info</span>')
+            gatt_services.append(
+                '<span class="gatt-service gatt-device-info">ℹ️ Device Info</span>'
+            )
         if dev.has_heart_rate_service:
-            gatt_services.append('<span class="gatt-service gatt-heart-rate">❤️ Heart Rate</span>')
+            gatt_services.append(
+                '<span class="gatt-service gatt-heart-rate">❤️ Heart Rate</span>'
+            )
 
         gatt_services_html = ' '.join(gatt_services) if gatt_services else '-'
 
@@ -1300,7 +977,6 @@ def export_html_report(output_path: str):
                 <td>{dev.packet_count:,}</td>
             </tr>
 """
-
 
     html += """        </table>
         
@@ -1324,6 +1000,59 @@ def export_html_report(output_path: str):
         f.write(html)
 
     print(f"{Colors.GREEN}✓ HTML report saved to: {output_path}{Colors.RESET}")
+
+
+# =============================================================================
+# WebSocket Server
+# =============================================================================
+ws_queue = queue.Queue()
+connected_clients = set()
+
+
+def json_serializer(obj):
+    if isinstance(obj, bytes):
+        return obj.hex()
+    if isinstance(obj, set):
+        return list(obj)
+    return str(obj)
+
+
+async def ws_handler(websocket):
+    connected_clients.add(websocket)
+    try:
+        await websocket.wait_closed()
+    finally:
+        connected_clients.remove(websocket)
+
+
+async def broadcast_loop():
+    while True:
+        try:
+            # Non-blocking get from queue
+            try:
+                data = ws_queue.get_nowait()
+                if connected_clients:
+                    message = json.dumps(data, default=json_serializer)
+                    websockets.broadcast(connected_clients, message)
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+        except Exception as e:
+            print(f"WS Broadcast Error: {e}")
+            await asyncio.sleep(1)
+
+
+async def start_ws_server_async():
+    async with websockets.serve(ws_handler, "0.0.0.0", 8765):
+        print(
+            f"{Colors.GREEN}WebSocket server started on port 8765{Colors.RESET}"
+        )
+        await broadcast_loop()
+
+
+def run_ws_server():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(start_ws_server_async())
 
 
 # =============================================================================
@@ -1450,6 +1179,9 @@ Examples:
     if args.html:
         print(f"HTML report: {Colors.CYAN}{args.html}{Colors.RESET}")
 
+    # Start WebSocket Server in background
+    threading.Thread(target=run_ws_server, daemon=True).start()
+
     try:
         ser = serial.Serial(args.port, args.baud, timeout=1)
         print(
@@ -1457,46 +1189,92 @@ Examples:
         )
         print(f"{Colors.CYAN}Capturing... (Ctrl+C to stop){Colors.RESET}\n")
 
+        line_buffer = b""
         while True:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
-            if line and "[btsnoop]" in line:
-                # Skip Stop markers if present (for older firmware)
-                if line.endswith(":Stop") or "]:Stop" in line:
+            try:
+                # Buffer read logic to handle split lines (timeout/baud rate issues)
+                while b'\n' not in line_buffer:
+                    chunk = ser.readline()
+                    if not chunk:
+                        break
+                    line_buffer += chunk
+
+                if b'\n' not in line_buffer:
                     continue
 
-                packet, packet_info = parse_line(line)
-                if packet:
-                    # Apply filters
-                    if filter_mac and packet_info:
-                        if packet_info.get('mac', '') != filter_mac:
-                            continue
+                raw_line, line_buffer = line_buffer.split(b'\n', 1)
+                line = raw_line.decode('utf-8', errors='ignore').strip()
 
-                    if filter_name and packet_info:
-                        name = packet_info.get('name', '').lower()
-                        if filter_name not in name:
-                            continue
-
-                    if args.min_rssi > -100 and packet_info:
-                        rssi = packet_info.get('rssi', 0)
-                        if rssi and rssi < args.min_rssi:
-                            continue
-
-                    write_pcap_packet(f, packet, packet_info)
-
-                    if args.verbose:
-                        desc = format_packet_description(packet, packet_info)
-                        if desc:
-                            print(f"  {desc}")
-                    elif not args.quiet:
-                        print(".", end='', flush=True)
-
-                    stats.print_status()
-                else:
-                    stats.errors += 1
-                    if args.verbose:
+                if line and "[btsnoop]" in line:
+                    # Handle firmware assertions/errors mixed in output
+                    # Check for assert or error keywords (case-insensitive)
+                    line_lower = line.lower()
+                    if "assert" in line_lower or "error" in line_lower or "plld_evt_end" in line_lower:
                         print(
-                            f"\n{Colors.RED}Parse error: {line[:80]}...{Colors.RESET}"
-                        )
+                            f"\n{Colors.RED}Firmware Error: {line}{Colors.RESET}",
+                            flush=True)
+                        continue
+
+                    # Skip Stop markers if present (for older firmware)
+                    if line.endswith(":Stop") or "]:Stop" in line:
+                        continue
+
+                    # Ensure we are looking at a valid btsnoop line structure
+                    # Filter out debug logs that might abuse the tag
+                    if "pkt_type" not in line and "opcode" not in line:
+                        if args.verbose:
+                            print(
+                                f"\n{Colors.GRAY}Ignored log: {line}{Colors.RESET}",
+                                flush=True)
+                        continue
+
+                    packet, packet_info = parse_line(line)
+                    if packet:
+                        # Apply filters
+                        if filter_mac and packet_info:
+                            if packet_info.get('mac', '') != filter_mac:
+                                continue
+
+                        if filter_name and packet_info:
+                            name = packet_info.get('name', '').lower()
+                            if filter_name not in name:
+                                continue
+
+                        if args.min_rssi > -100 and packet_info:
+                            rssi = packet_info.get('rssi', 0)
+                            if rssi and rssi < args.min_rssi:
+                                continue
+
+                        write_pcap_packet(f, packet, packet_info)
+
+                        if args.verbose and packet_info:
+                            desc = format_packet_description(
+                                packet, packet_info)
+                            if desc:
+                                print(f"  {desc}", flush=True)
+                        elif not args.quiet:
+                            print(".", end='', flush=True)
+
+                        stats.print_status()
+                    else:
+                        stats.errors += 1
+                        if args.verbose:
+                            reason = ""
+                            if packet_info and 'error' in packet_info:
+                                reason = f" ({packet_info['error']})"
+
+                            print(
+                                f"\n{Colors.RED}Parse error{reason}: {line}{Colors.RESET}",
+                                flush=True)
+            except BrokenPipeError:
+                print(
+                    f"\n{Colors.RED}Broken pipe - Output closed (Wireshark disconnected?){Colors.RESET}"
+                )
+                break
+            except Exception as e:
+                print(f"\n{Colors.RED}Loop Error: {e}{Colors.RESET}",
+                      flush=True)
+                continue
 
     except KeyboardInterrupt:
         print(f"\n\n{Colors.YELLOW}Stopping capture...{Colors.RESET}")

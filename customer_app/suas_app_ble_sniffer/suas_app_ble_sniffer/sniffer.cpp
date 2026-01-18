@@ -42,8 +42,6 @@ typedef struct {
   uint32_t packet_count;
 } packet_buffer_t;
 
-// Global packet buffer.
-// Note: Not thread-safe if accessed from multiple tasks without locking!
 static packet_buffer_t g_packet_buffer = {};
 
 static void parse_advertisement_data(const uint8_t* payload,
@@ -55,7 +53,7 @@ static void parse_advertisement_data(const uint8_t* payload,
     return;
   }
 
-  // Reset everything. This is annoying but necessary to avoid stale data.
+  // Reset fields
   packet->device_name[0] = '\0';
   packet->tx_power = -128;
   packet->appearance = 0;
@@ -380,9 +378,9 @@ static void sniffer_task(void* arg) {
 
     uint32_t now = xTaskGetTickCount();
 
-    // LED Logic:
-    // If receiving (packet within last 1s): Blink Green, Red OFF
-    // If timeout: Green OFF, Red ON
+    // LED status:
+    // - Active (last 1s): Blink Green, Red OFF
+    // - Idle: Green OFF, Red ON
     if ((now - g_last_packet_tick) < pdMS_TO_TICKS(1000)) {
       // Active - Red OFF
       bl_gpio_output_set(LED_RED, 1);
