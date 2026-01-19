@@ -39,8 +39,6 @@ static struct bt_conn_cb conn_callbacks = {
     .disconnected = ble_peripheral_disconnected,
     .le_param_req = NULL,
     .le_param_updated = NULL,
-    .identity_resolved = NULL,
-    .security_changed = NULL,
     ._next = NULL,
 };
 

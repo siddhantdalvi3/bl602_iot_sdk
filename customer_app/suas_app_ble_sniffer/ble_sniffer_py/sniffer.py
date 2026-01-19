@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+from ble_constants import *
 
 
 # Quick hack for colors in terminal
@@ -43,7 +44,6 @@ class Colors:
         Colors.RESET = Colors.RED = Colors.GREEN = ''
         Colors.YELLOW = Colors.BLUE = Colors.MAGENTA = ''
         Colors.CYAN = Colors.GRAY = Colors.BOLD = ''
-
 
 
 # =============================================================================

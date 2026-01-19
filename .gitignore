@@ -13,3 +13,9 @@ __pycache__
 
 # Toolchain
 toolchain
+
+# Captured packets
+*.pcap
+
+#web_ui
+web_ui/build
