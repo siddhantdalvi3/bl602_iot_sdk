@@ -33,6 +33,9 @@ extern "C" {
 #include "include/central.h"
 #include "include/main.h"
 #include "include/peripheral.h"
+
+// Extern declaration for UART baud rate setting
+extern void bl_uart_setbaud(uint8_t id, uint32_t baud);
 }
 
 #include <etl/string.h>
@@ -52,8 +55,8 @@ void board_leds_off() {
 }
 
 /* Listener for BLE events */
-void event_cb_ble_event(input_event_t *event,
-                        [[gnu::unused]] void *private_data) {
+void event_cb_ble_event(input_event_t* event,
+                        [[gnu::unused]] void* private_data) {
   /* Turn off LEDS */
   board_leds_off();
 
@@ -98,23 +101,23 @@ void event_cb_ble_event(input_event_t *event,
         vTaskDelay(pdMS_TO_TICKS(5000));
         ble_central_start_scanning();
       }
-      // Peripheral: do NOT restart advertising (BLE stack handles re-advertising automatically)
-      // Just wait for next connection attempt
+      // Peripheral: do NOT restart advertising (BLE stack handles
+      // re-advertising automatically) Just wait for next connection attempt
     } break;
-    /* Only called by central: exchange MTU size*/
+
     case BLE_DEV_SUBSCRIBED:
       bl_gpio_output_set(LED_GREEN, 0);
       ble_central_exchange_mtu();
       break;
-    /* Unknown event */
+
     default:
       printf("[BLE] Unknown code\r\n");
   }
 }
 
 /* Listener for key events */
-void event_cb_key_event(input_event_t *event,
-                        [[gnu::unused]] void *private_data) {
+void event_cb_key_event(input_event_t* event,
+                        [[gnu::unused]] void* private_data) {
   /* Get current app role enum */
   auto app_role = static_cast<enum app_ble_role>(
       reinterpret_cast<uintptr_t>(pvTaskGetThreadLocalStoragePointer(
@@ -134,7 +137,7 @@ void event_cb_key_event(input_event_t *event,
             /* Task */ nullptr,
             /* Index */ 0,
             /* Value */
-            reinterpret_cast<void *>(static_cast<uintptr_t>(app_role)));
+            reinterpret_cast<void*>(static_cast<uintptr_t>(app_role)));
 
         // Start
         start_peripheral_application();
@@ -152,7 +155,7 @@ void event_cb_key_event(input_event_t *event,
             /* Task */ nullptr,
             /* Index */ 0,
             /* Value */
-            reinterpret_cast<void *>(static_cast<uintptr_t>(app_role)));
+            reinterpret_cast<void*>(static_cast<uintptr_t>(app_role)));
 
         // Start
         start_central_application();
@@ -176,31 +179,31 @@ void event_cb_key_event(input_event_t *event,
 }
 
 /* CLI command to send BLE notification */
-static void cmd_send_notif(char *buf, int len, int argc, char **argv) {
+static void cmd_send_notif(char* buf, int len, int argc, char** argv) {
   (void)buf;
   (void)len;
   (void)argc;
   (void)argv;
-  
+
   printf("[CLI] Sending BLE notification...\r\n");
   ble_peripheral_send_notification();
   printf("[CLI] Notification sent\r\n");
 }
 
 static const struct cli_command cmd_table[] = {
-    { "send", "Send BLE notification to connected device", cmd_send_notif },
+    {"send", "Send BLE notification to connected device", cmd_send_notif},
 };
 
 /* Helper function to read device tree */
-static int get_dts_addr(etl::string_view name, uint32_t &start, uint32_t &off) {
+static int get_dts_addr(const char* name, uint32_t& start, uint32_t& off) {
   /* Check we get valid data*/
-  if (name.empty()) {
+  if (name == nullptr) {
     return -1;
   }
 
   /* Compute device tree data */
-  auto fdt = reinterpret_cast<const void *>(hal_board_get_factory_addr());
-  auto offset = fdt_subnode_offset(fdt, 0, name.data());
+  auto fdt = reinterpret_cast<const void*>(hal_board_get_factory_addr());
+  auto offset = fdt_subnode_offset(fdt, 0, name);
 
   /* Check if offset is valid*/
   if (offset <= 0) {
@@ -214,8 +217,17 @@ static int get_dts_addr(etl::string_view name, uint32_t &start, uint32_t &off) {
   return 0;
 }
 
+/* Periodic sender task */
+void periodic_sender_task(void* pvParameters) {
+  (void)pvParameters;
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(2000));  // 2 seconds
+    ble_peripheral_send_notification();
+  }
+}
+
 /* Event loop */
-void aos_loop_proc([[gnu::unused]] void *pvParameters) {
+void aos_loop_proc([[gnu::unused]] void* pvParameters) {
   // Setup looprt task
   uint32_t fdt = 0, offset = 0;  // these must be uint32_t
   constexpr uint16_t LOOPRT_STACK_SIZE = 512;
@@ -231,13 +243,13 @@ void aos_loop_proc([[gnu::unused]] void *pvParameters) {
   vfs_device_init();
 
   /* Setup UART */
-  if (get_dts_addr(etl::string_view("uart"), fdt, offset) == 0) {
+  if (get_dts_addr("uart", fdt, offset) == 0) {
     vfs_uart_init(fdt, offset);
   }
 
   /* Setup GPIO */
-  if (get_dts_addr(etl::string_view("gpio"), fdt, offset) == 0) {
-    fdt_button_module_init(reinterpret_cast<const void *>(fdt),
+  if (get_dts_addr("gpio", fdt, offset) == 0) {
+    fdt_button_module_init(reinterpret_cast<const void*>(fdt),
                            static_cast<int>(offset));
   }
   /* Start loop */
@@ -248,17 +260,21 @@ void aos_loop_proc([[gnu::unused]] void *pvParameters) {
   vTaskSetThreadLocalStoragePointer(
       /* Task */ nullptr,
       /* Index */ 0,
-      /* Value */ reinterpret_cast<void *>(static_cast<uintptr_t>(app_role)));
+      /* Value */ reinterpret_cast<void*>(static_cast<uintptr_t>(app_role)));
 
   /* Register event filters */
   aos_register_event_filter(EV_KEY, event_cb_key_event, nullptr);
   aos_register_event_filter(EV_BLE_TEST, event_cb_ble_event, nullptr);
 
   /* Register CLI commands */
-  aos_cli_register_commands(cmd_table, sizeof(cmd_table) / sizeof(cmd_table[0]));
+  aos_cli_register_commands(cmd_table,
+                            sizeof(cmd_table) / sizeof(cmd_table[0]));
 
   /* Auto-start as peripheral */
   start_peripheral_application();
+
+  /* Start periodic sender task */
+  xTaskCreate(periodic_sender_task, "sender", 2048, NULL, 10, NULL);
 
   aos_loop_run();
 
@@ -280,6 +296,8 @@ extern "C" void bfl_main(void) {
   bl_gpio_enable_output(LED_RED, 1, 0);
   bl_gpio_enable_output(LED_GREEN, 1, 0);
   board_leds_off();
+
+  printf("[MAIN] Booting suas_app_ble_sender...\r\n");
 
   /* Create tasks */
   xTaskCreateStatic(aos_loop_proc, etl::string_view("event loop").data(),

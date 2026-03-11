@@ -20,6 +20,22 @@
 #include "hci_onchip.h"
 #if defined(CONFIG_BTSOONP_PRINT)
 #include "log.h"
+
+/* Rate limiting for btsnoop output to prevent UART flooding */
+#ifndef CONFIG_BTSNOOP_RATE_LIMIT
+#define CONFIG_BTSNOOP_RATE_LIMIT 1  /* Print every Nth packet (1=all) */
+#endif
+
+static uint32_t g_btsnoop_pkt_count = 0;
+
+/* Non-blocking print macro - skip Stop marker to reduce output */
+#define BTSNOOP_PRINT(pkt_type, len, data) do { \
+    if ((++g_btsnoop_pkt_count % CONFIG_BTSNOOP_RATE_LIMIT) == 0) { \
+        printf("[btsnoop]:pkt_type =[0x%x],len =[0x%x],data=[%s]\r\n", \
+               (unsigned int)(pkt_type), (unsigned int)(len), bt_hex((data), (len))); \
+    } \
+} while(0)
+
 #endif
 
 extern int hci_host_recv_pkt_handler(uint8_t *data, uint16_t len);
@@ -155,7 +171,6 @@ int bl_onchiphci_send_2_controller(struct net_buf *buf)
 
         #if defined(CONFIG_BTSOONP_PRINT)
         printf("[btsnoop]:opcode =[0x%x],len =[0x%x],data=[%s]\r\n",opcode,chdr->param_len,bt_hex(buf->data,chdr->param_len));
-        printf("[btsnoop]:Stop\r\n");
         #endif
 
         break;
@@ -200,7 +215,6 @@ int bl_onchiphci_send_2_controller(struct net_buf *buf)
         ***************************************************************************/
         printf("[btsnoop]:Acl_out_handle =[0x%x],pb_bc_flag =[0x%x],len =[0x%x],data=[%s]\r\n",pkt.p.acl_data.conhdl,pkt.p.acl_data.pb_bc_flag,
                                                                     tlt_len,bt_hex(pkt.p.acl_data.buffer,tlt_len));
-        printf("[btsnoop]:Stop\r\n");
         #endif
 
         break;
@@ -311,8 +325,7 @@ static void bl_onchiphci_rx_packet_handler(uint8_t pkt_type, uint16_t src_id, ui
             #if defined(CONFIG_BTSOONP_PRINT)
             tbuf_data += param_len;
 
-            printf("[btsnoop]:pkt_type =[0x%x],len =[0x%x],data=[%s]\r\n",pkt_type,3+param_len,bt_hex(tbuf_data-(3+param_len),3+param_len));
-            printf("[btsnoop]:Stop\r\n");
+            BTSNOOP_PRINT(pkt_type, 3+param_len, tbuf_data-(3+param_len));
             #endif
 
             break;
@@ -337,8 +350,7 @@ static void bl_onchiphci_rx_packet_handler(uint8_t pkt_type, uint16_t src_id, ui
             *     OCF: 1byte
             *     OGF: 1byte
             ***************************************************************************/
-            printf("[btsnoop]:pkt_type =[0x%x],len =[0x%x],data=[%s]\r\n",pkt_type,4,bt_hex(tbuf_data-4,4));
-            printf("[btsnoop]:Stop\r\n");
+            BTSNOOP_PRINT(pkt_type, 4, tbuf_data-4);
             #endif
 
             break;
@@ -354,8 +366,7 @@ static void bl_onchiphci_rx_packet_handler(uint8_t pkt_type, uint16_t src_id, ui
             memcpy(buf_data, param, param_len);
 
             #if defined(CONFIG_BTSOONP_PRINT)
-            printf("[btsnoop]:pkt_type =[0x%x],len =[0x%x],data=[%s]\r\n",pkt_type,param_len,bt_hex(buf_data,param_len));
-            printf("[btsnoop]:Stop\r\n");
+            BTSNOOP_PRINT(pkt_type, param_len, buf_data);
             #endif
 
             break;
@@ -373,8 +384,7 @@ static void bl_onchiphci_rx_packet_handler(uint8_t pkt_type, uint16_t src_id, ui
             memcpy(buf_data, param, param_len);
             #if defined(CONFIG_BTSOONP_PRINT)
             if(!prio){
-                printf("[btsnoop]:pkt_type =[0x%x],len =[0x%x],data=[%s]\r\n",pkt_type,param_len,bt_hex(buf_data-2,param_len+2));
-                printf("[btsnoop]:Stop\r\n");
+                BTSNOOP_PRINT(pkt_type, param_len+2, buf_data-2);
             }else{
                 /*ignore :BT_HCI_EVT_NUM_COMPLETED_PACKETS */
             }
@@ -405,7 +415,6 @@ static void bl_onchiphci_rx_packet_handler(uint8_t pkt_type, uint16_t src_id, ui
             *
             ***************************************************************************/
             printf("[btsnoop]:Acl_in_handle =[0x%x],pb_bc_flag =[0x%x],len =[0x%x],data=[%s]\r\n",buf_data[0],buf_data[1],tlt_len-4,bt_hex(buf_data+4,tlt_len-4));
-            printf("[btsnoop]:Stop\r\n");
             #endif
 
             break;

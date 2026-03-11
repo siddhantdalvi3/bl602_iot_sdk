@@ -187,7 +187,7 @@ all:
 ifeq ("$(OS)","Windows_NT")
 else
 ifeq ("$(CONFIG_CHIP_NAME)", "BL602")
-	@env -u CC -u CXX -u AR -u CFLAGS -u CPPFLAGS python3 -m pip install -r $(BL60X_SDK_PATH)/image_conf/requirements.txt
+	# @env -u CC -u CXX -u AR -u CFLAGS -u CPPFLAGS python3 -m pip install -r $(BL60X_SDK_PATH)/image_conf/requirements.txt
 	@cd $(BL60X_SDK_PATH)/image_conf && python3 flash_build.py $(PROJECT_NAME) $(CONFIG_CHIP_NAME) $(BL602_FLAVOR) $(ALTERNATIVE_PROJECT_DIR)
 endif
 endif
@@ -203,11 +203,16 @@ BL_SDK_RF_VER := $(shell cd ${BL60X_SDK_PATH}/components/bl602/bl602_wifi/plf/re
 endif
 $(info use git describe to generate version.txt)
 else
-BL_SDK_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n1`
+BL_SDK_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n1)
 ifeq ("$(CONFIG_CHIP_NAME)", "BL602")
-BL_SDK_PHY_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n2|tail -n1`
-BL_SDK_RF_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n3|tail -n1`
+BL_SDK_PHY_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n2 | tail -n1)
+BL_SDK_RF_VER := $(shell cat ${BL60X_SDK_PATH}/version.txt | head -n3 | tail -n1)
 endif
+# BL_SDK_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n1`
+# ifeq ("$(CONFIG_CHIP_NAME)", "BL602")
+# BL_SDK_PHY_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n2|tail -n1`
+# BL_SDK_RF_VER := `cat ${BL60X_SDK_PATH}/version.txt |head -n3|tail -n1`
+# endif
 $(info use existing version.txt file)
 endif
 BL_CHIP_NAME := ${CONFIG_CHIP_NAME}

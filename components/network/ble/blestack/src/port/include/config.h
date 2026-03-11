@@ -113,13 +113,16 @@ extern "C" {
 /**
 * CONFIG_BT_RX_BUF_COUNT: number of buffer for incoming ACL packages or HCI
 * events,range 2 to 255
+* Increased for BLE sniffer to handle high traffic
 */
 #ifndef CONFIG_BT_RX_BUF_COUNT
 
 #if defined(CONFIG_BT_MESH)
-#define CONFIG_BT_RX_BUF_COUNT 10
+#define CONFIG_BT_RX_BUF_COUNT 30
+#elif defined(CONFIG_BTSOONP_PRINT)
+#define CONFIG_BT_RX_BUF_COUNT 40  /* Extra buffers for sniffer mode */
 #else
-#define CONFIG_BT_RX_BUF_COUNT 5
+#define CONFIG_BT_RX_BUF_COUNT 10
 #endif //CONFIG_BT_MESH
 #endif
 
